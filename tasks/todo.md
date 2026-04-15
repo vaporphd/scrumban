@@ -131,8 +131,8 @@ scrumban/
 - [x] README с dev-flow, командами, архитектурой
 
 ### Phase 1 — Auth + users (день 3–4)
-- [ ] SQLAlchemy модели: `User`, `TgLinkCode`
-- [ ] Миграция
+- [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)
+- [x] Миграция (#1, `5130146827ca`)
 - [ ] `POST /api/auth/register` (username+password, argon2)
 - [ ] `POST /api/auth/login` → access+refresh JWT
 - [ ] `POST /api/auth/refresh`
