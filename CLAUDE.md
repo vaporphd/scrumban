@@ -124,8 +124,45 @@ CI runs on push/PR to `main`: ruff, mypy, pytest (backend) + vue-tsc, vitest, vi
 ## Conventions specific to this repo
 
 - `tasks/todo.md` is tracked in git and kept up to date with the plan; `thoughts/` is gitignored (session logs).
+- `followup.md` in the repo root is the cross-session continuity file: **two sections only** — `Status` and `Next`. Replace, don't append. Update on every merged PR. `git log` is the history, not this file.
 - Services are stateless — put scheduled work in `app/bot/` via APScheduler (the bot process owns the scheduler, not api).
 - Publish Redis events from services, never directly from routers/handlers.
 - New endpoints go under `app/api/`; new bot commands under `app/bot/handlers/`. Both call into `app/services/`.
 - Ruff rule `ASYNC` is on — don't block the event loop (`time.sleep`, sync DB calls, sync file IO in handlers).
 - Mypy is `strict`. Prefer `pydantic` models for request/response, not raw dicts.
+
+## Issue-driven workflow
+
+Every non-trivial change starts from a GitHub issue. Issues, not chat, are the source of truth for "what are we doing and why". The exception: trivial fixes (typo, one-liner, obvious bug) and items already enumerated in `tasks/todo.md` phase checklists.
+
+### Flow
+
+1. **Create the issue first** (`gh issue create`). Title starts with the type: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, `test:`. Body has: what, why, acceptance criteria.
+2. Apply labels: one `phase/*`, one `type/*`, one or more `area/*`.
+3. **Branch**: `issue-{N}-{slug}` for anything non-trivial. For a solo trunk-based commit against `main`, skip the branch but still reference the issue.
+4. **One issue → one PR** when possible. Keep PRs small and focused.
+5. **Commits**: `type(scope): description (#N)` — e.g. `feat(auth): add argon2 password hashing (#5)`.
+   - Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
+   - Scopes: `api`, `bot`, `ws`, `db`, `auth`, `frontend`, `infra`, `deps`.
+6. **Close via PR body**: `Closes #N` (or `Closes #N, #M` for multiple).
+7. On merge, update `tasks/todo.md` checkbox + `followup.md` (in the same PR or immediately after).
+
+### Hard gate
+
+A PR that introduces a new subsystem or makes an architectural choice **must** include one of:
+- A new ADR under `docs/adr/NNNN-title.md` (sequential numbering, format: Status / Date / Context / Decision / Reasoning / Consequences), OR
+- An update to an existing ADR (mark superseded if replaced), OR
+- A corresponding checklist update in `tasks/todo.md` if the plan already covered it.
+
+"New subsystem" means: a new top-level `app/` package, a new external service dependency, a new auth/permission mechanism, a new protocol (WS event type, bot command family), a new storage backend. When in doubt — write the ADR.
+
+### gh CLI cheatsheet
+
+```sh
+gh issue create --title "feat: ..." --label "phase/1,type/feat,area/auth" --body "..."
+gh issue list --label "phase/1"
+gh issue view N
+gh pr create --fill                    # uses latest commit message
+gh pr view --web
+gh pr checks
+```
