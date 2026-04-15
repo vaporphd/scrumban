@@ -4,9 +4,9 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message
-from aiogram.filters import CommandStart
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -31,9 +31,7 @@ async def main() -> None:
 
     @dp.message(CommandStart())
     async def cmd_start(message: Message) -> None:
-        await message.answer(
-            "Scrumban bot. Link this chat in web UI to start using it."
-        )
+        await message.answer("Scrumban bot. Link this chat in web UI to start using it.")
 
     log.info("bot_start", extra={"mode": settings.telegram.mode})
     await dp.start_polling(bot)
