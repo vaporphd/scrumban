@@ -115,11 +115,36 @@ npm run build        # type-check + vite build
 
 Path alias `@/*` → `src/*`.
 
-### Git / CI
+### Git / CI / quality gate
 
-CI runs on push/PR to `main`: ruff, mypy, pytest (backend) + vue-tsc, vitest, vite build (frontend). Both must pass.
+Three layers enforce a clean `main`:
 
-`pre-commit install` (optional) wires ruff + whitespace hooks.
+1. **pre-commit hook** (fast, on `git commit`): ruff check + format, mypy (backend), vue-tsc (frontend).
+2. **pre-push hook** (medium, on `git push`): pytest (backend), vitest (frontend).
+3. **CI** on push/PR to `main`: all of the above + ruff format `--check`, `alembic upgrade/downgrade` round-trip against a live Postgres service container, vite build.
+4. **Branch protection** on `main`: required checks `backend` and `frontend` must be green to merge.
+
+Install both git-hook stages once:
+```sh
+pre-commit install                        # installs pre-commit AND pre-push, see default_install_hook_types
+pre-commit run --all-files                # sanity check
+pre-commit run --hook-stage pre-push --all-files
+```
+
+**Before opening a PR** — run the same thing CI runs, locally:
+```sh
+(cd backend && ruff check . && ruff format --check . && mypy app && pytest)
+(cd frontend && npm run type-check && npm test && npm run build)
+```
+
+**Known gotchas** (things that already bit us — read before assuming the hook is broken):
+- `RUF100 unused noqa` — ruff flags `# noqa: XXX` when rule `XXX` isn't in `tool.ruff.lint.select`. Don't add noqa unless the rule is enabled.
+- `vitest run` exits 1 on zero test files. `--passWithNoTests` is set while Phase 1 frontend tests are still pending.
+- Alembic autogenerate does **not** emit `DROP TYPE` for Postgres ENUMs in `downgrade()`. Add it manually, or round-trip will fail on the second upgrade.
+- SQLAlchemy's `sa.Enum(PyEnum, ...)` stores enum **names** (uppercase) by default. Use `values_callable=lambda e: [m.value for m in e]` to store values.
+- Pre-commit hooks call `backend/.venv/bin/mypy` and `backend/.venv/bin/pytest` by explicit path. If the venv doesn't exist (or is at a different path), the hook fails. Run the onboarding block from README first.
+
+Bypass via `--no-verify` is for emergencies. Never push `--no-verify` to a branch that will be merged to `main`.
 
 ## Conventions specific to this repo
 

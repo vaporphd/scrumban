@@ -66,6 +66,29 @@ npm install
 npm run dev
 ```
 
+## Developer onboarding
+
+One-time setup after cloning:
+
+```sh
+cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e . && pip install ruff mypy pytest pytest-asyncio httpx pre-commit && cd ..
+cd frontend && npm install && cd ..
+pre-commit install                        # wires git hooks: pre-commit AND pre-push
+```
+
+## Quality gate
+
+What runs where:
+
+| Stage              | When                | Runs                                                              | Time      |
+|--------------------|---------------------|-------------------------------------------------------------------|-----------|
+| **pre-commit**     | `git commit`        | ruff check, ruff format, mypy (backend), vue-tsc (frontend)       | < 5s      |
+| **pre-push**       | `git push`          | pytest (backend), vitest (frontend)                               | 5–20s     |
+| **CI**             | PR + push to `main` | all of the above + `alembic upgrade/downgrade` round-trip + vite build, against a live Postgres service container | 2–3 min  |
+| **branch protection** | PR merge         | `main` refuses merges unless CI is green                          | —         |
+
+`--no-verify` bypasses the hooks. Use it for emergencies only — never for a commit that will be merged to `main`.
+
 ## Common commands
 
 Backend:
