@@ -136,7 +136,7 @@ async def refresh(session: AsyncSession, *, refresh_token: str) -> TokenPair:
         existing.replaced_by_id = successor.id
         access = issue_access_token(existing.user_id, now=now)
         await session.commit()
-    except BaseException:
+    except Exception:
         if session.in_transaction():
             await session.rollback()
         raise

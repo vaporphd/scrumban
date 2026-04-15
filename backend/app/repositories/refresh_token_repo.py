@@ -42,15 +42,21 @@ async def create(
 
 
 async def revoke_chain_for_user(session: AsyncSession, user_id: int, *, now: datetime) -> None:
-    """Revoke all non-revoked refresh tokens for a user.
+    """Revoke every non-expired, non-revoked refresh token for a user.
 
     Used on replay detection (ADR-0005): seeing a revoked token used
-    again is positive evidence of theft, so we invalidate every session
-    for that user.
+    again is positive evidence of theft, so we invalidate every live
+    session for that user. Already-expired rows are left alone — the
+    expires_at check is enough to keep them unusable, and not touching
+    them keeps this UPDATE's row count matching the ADR wording.
     """
     stmt = (
         update(RefreshToken)
-        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
         .values(revoked_at=now)
     )
     await session.execute(stmt)
