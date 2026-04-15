@@ -133,11 +133,11 @@ scrumban/
 ### Phase 1 — Auth + users (день 3–4)
 - [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)
 - [x] Миграция (#1, `5130146827ca`)
-- [ ] `POST /api/auth/register` (username+password, argon2)
-- [ ] `POST /api/auth/login` → access+refresh JWT
-- [ ] `POST /api/auth/refresh`
-- [ ] `GET /api/me`
-- [ ] FastAPI dependency `current_user` (Bearer JWT)
+- [x] `POST /api/auth/register` (username+password, argon2) (#2)
+- [x] `POST /api/auth/login` → access+refresh JWT (#2)
+- [x] `POST /api/auth/refresh` (#2, opaque rotating tokens per ADR-0005)
+- [x] `GET /api/me` (#2)
+- [x] FastAPI dependency `current_user` (Bearer JWT) (#2)
 - [ ] Vue: Login / Register / страница профиля
 - [ ] Тесты: регистрация, логин, 401 без токена, refresh-flow
 
