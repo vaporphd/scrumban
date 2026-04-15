@@ -191,3 +191,51 @@ gh pr create --fill                    # uses latest commit message
 gh pr view --web
 gh pr checks
 ```
+
+## Agent ownership
+
+Seven specialized subagents live in `.claude/agents/*.md`. Each has a narrow scope, a tool whitelist, and a required response format. The top-level session **delegates** to them via the `Task` tool.
+
+| Stage of the flow               | Agent          | Trigger                                                         |
+|---------------------------------|----------------|-----------------------------------------------------------------|
+| Understand existing code        | `explorer`     | "how does X work", "trace X", "where is X implemented"          |
+| Design a new subsystem + ADR    | `architect`    | new `app/` package, new external dep, new protocol, new authz   |
+| Take issue #N → branch → PR     | `implementer`  | "implement #N", "take on issue #N"                              |
+| Fix a reported bug              | `bug-hunter`   | bug report with symptom; starts with failing regression test    |
+| Pre-merge review                | `reviewer`     | **proactive** — run before any `gh pr merge`                    |
+| Hooks / workflows / compose     | `ci-devops`    | touching `.github/`, `.pre-commit-config.yaml`, `deploy/`, Dockerfiles |
+| Sync docs with code             | `docs-writer`  | **proactive** — after a PR that changes setup, commands, or conventions |
+
+### Delegate vs handle directly
+
+The main session **delegates** these:
+
+- Any non-trivial read-only investigation (> 3 files or > 5 minutes of grep) → `explorer`
+- Any production code change scoped to a single issue → `implementer`
+- Any bug report with a reproducer → `bug-hunter`
+- Every PR before `gh pr merge` → `reviewer`
+- Any CI / hook / infra change → `ci-devops`
+- Any docs update driven by a code change → `docs-writer` (may run proactively after merges)
+- Any design choice that warrants an ADR → `architect`
+
+The main session **handles directly** (never delegates):
+
+- Clarifying requirements with the user (`AskUserQuestion`).
+- Authorizing destructive actions (`gh pr merge`, `git push --force`, `gh api -X DELETE …`). The user authorizes, the main session executes.
+- Coordinating multi-agent workflows (e.g. architect → implementer → reviewer on a multi-PR epic).
+- Reading and writing `followup.md` between agent handoffs.
+- Escalating when an agent reports a blocker it cannot resolve.
+
+### How to invoke
+
+Explicit:
+```
+Task(subagent_type="implementer", prompt="Take on issue #2: ...")
+Task(subagent_type="reviewer",    prompt="Review PR #N")
+```
+
+Implicit (proactive): the agent's `description` field triggers automatic delegation on matching phrasing — e.g. "please review PR #14" picks `reviewer`, "how does our auth work" picks `explorer`. Keep prompts phrased like the triggers so delegation is deterministic.
+
+### Invariant
+
+Every PR produced by an agent still goes through the three-layer quality gate (pre-commit, pre-push, CI) and branch protection on `main`. Agents don't get a bypass — they just do the work, and the gate checks the output.

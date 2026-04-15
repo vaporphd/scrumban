@@ -114,17 +114,17 @@ npm run build
 
 Committed to `.claude/agents/` — seven specialized Claude Code subagents with narrow scopes, tool whitelists, and required response formats:
 
-| Agent | What it does |
-|---|---|
-| `explorer` | trace code before changing it; read-only |
-| `architect` | design + ADRs; no production code |
-| `implementer` | one issue end-to-end; no merges, no scope creep |
-| `bug-hunter` | failing regression test first, then minimum fix |
-| `reviewer` | pre-merge PR review; posts comments, never pushes |
-| `ci-devops` | hooks, workflows, compose, Dockerfiles — not app code |
-| `docs-writer` | README / CLAUDE.md / ADRs / followup in sync with code |
+| Agent | What it does | Proactive trigger |
+|---|---|---|
+| `explorer` | trace code before changing it; read-only | "how does X work", "trace X" |
+| `architect` | design + ADRs; no production code | new subsystem / external dep / protocol |
+| `implementer` | one issue end-to-end; no merges, no scope creep | "implement #N", "take on #N" |
+| `bug-hunter` | failing regression test first, then minimum fix | bug report with symptom |
+| `reviewer` | pre-merge PR review; posts comments, never pushes | **on PR open / before merge** |
+| `ci-devops` | hooks, workflows, compose, Dockerfiles — not app code | touching `.github/`, hooks, `deploy/` |
+| `docs-writer` | README / CLAUDE.md / ADRs / followup in sync with code | **after setup/convention PR merges** |
 
-Claude Code picks one automatically based on the task, or you can delegate explicitly with the `Task` tool.
+Explicit delegation — `Task(subagent_type="<name>", prompt="…")`. The main session handles user clarification, merge authorization, and cross-agent coordination; everything else goes through an agent. Full rules in [`CLAUDE.md`](CLAUDE.md) → "Agent ownership".
 
 ## Architecture at a glance
 
