@@ -110,6 +110,22 @@ npm run test
 npm run build
 ```
 
+## Agent profiles
+
+Committed to `.claude/agents/` — seven specialized Claude Code subagents with narrow scopes, tool whitelists, and required response formats:
+
+| Agent | What it does |
+|---|---|
+| `explorer` | trace code before changing it; read-only |
+| `architect` | design + ADRs; no production code |
+| `implementer` | one issue end-to-end; no merges, no scope creep |
+| `bug-hunter` | failing regression test first, then minimum fix |
+| `reviewer` | pre-merge PR review; posts comments, never pushes |
+| `ci-devops` | hooks, workflows, compose, Dockerfiles — not app code |
+| `docs-writer` | README / CLAUDE.md / ADRs / followup in sync with code |
+
+Claude Code picks one automatically based on the task, or you can delegate explicitly with the `Task` tool.
+
 ## Architecture at a glance
 
 Two Python processes (`api`, `bot`) share the same package (`app/`):

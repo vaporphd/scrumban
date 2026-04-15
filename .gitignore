@@ -29,6 +29,10 @@ dist/
 # Project
 thoughts/
 logs/
+
+# Claude Code — keep agents tracked, hide personal settings/runtime
+.claude/*
+!.claude/agents/
 uploads/
 minio-data/
 postgres-data/
