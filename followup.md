@@ -2,17 +2,17 @@
 
 ## Status
 
-Branch `main`, in sync with `origin/main`. Phase 0 complete. Issue #1 merged (`3dd6cf6`): User + TgLinkCode models + Alembic baseline with partial unique index for link-code activity.
+Branch `main`, in sync with `origin/main`. Phase 0 complete. Phase 1 issue #1 merged (`3dd6cf6`): User + TgLinkCode models + Alembic baseline with partial unique index for link-code activity.
 
-Quality-gate epic just opened (#11) with five subtasks (#6–#10). Implementing now, before Phase 1 auth endpoints — so the flow enforces lint-before-commit and tests-before-push for all remaining work.
-
-Docker compose stack has been started locally: postgres-16 container up with migration applied.
+Quality-gate epic #11 complete:
+- #6 + #7: pre-commit (ruff, mypy, vue-tsc) + pre-push (pytest, vitest) — merged `970a4c0`.
+- #8: CI hardened with Postgres service, split steps, npm ci via lockfile — merged `970a4c0`.
+- #10: onboarding + quality-gate docs in README + CLAUDE.md — merged `970a4c0`.
+- #9: branch protection on `main` — applied via `gh api`, documented in CLAUDE.md.
 
 ## Next
 
-1. **Issue #6** — extend `.pre-commit-config.yaml` (ruff already there; add mypy + vue-tsc).
-2. **Issue #7** — add pre-push hooks (pytest + vitest).
-3. **Issue #8** — harden CI: Postgres service, split steps, cache check.
-4. **Issue #10** — document the workflow in README + CLAUDE.md.
-5. **Issue #9** — branch protection on `main` (after #8 stabilises the check names).
-6. **Back to Phase 1**: issue #2 (`feat(auth): register/login/refresh/me + JWT dependency`).
+1. **Phase 1 — issue #2**: `feat(auth): register/login/refresh/me + JWT dependency`. Argon2 + python-jose + opaque refresh tokens (hashed in DB), service layer in `app/services/auth_service.py`, routers in `app/api/auth.py` + `app/api/me.py`. ADR if the refresh-rotation approach deviates from "rotate on every refresh".
+2. **Phase 1 — issue #4**: auth test suite with the live Postgres CI service.
+3. **Phase 1 — issue #3**: frontend Login/Register/Profile + Pinia auth store, 401 → refresh interceptor.
+4. **Phase 1 — separate ticket**: Telegram link-code endpoint + profile UI button. Small, keep it out of #2 so that PR stays focused.

@@ -122,7 +122,7 @@ Three layers enforce a clean `main`:
 1. **pre-commit hook** (fast, on `git commit`): ruff check + format, mypy (backend), vue-tsc (frontend).
 2. **pre-push hook** (medium, on `git push`): pytest (backend), vitest (frontend).
 3. **CI** on push/PR to `main`: all of the above + ruff format `--check`, `alembic upgrade/downgrade` round-trip against a live Postgres service container, vite build.
-4. **Branch protection** on `main`: required checks `backend` and `frontend` must be green to merge.
+4. **Branch protection** on `main`: required checks `backend` and `frontend` must be green to merge; linear history required (squash/rebase, no merge commits); force-push and branch-delete blocked; conversation resolution required on PRs. Admin (repo owner) can still push trivial direct commits while the project is solo — enable `enforce_admins` when the team grows.
 
 Install both git-hook stages once:
 ```sh
