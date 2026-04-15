@@ -174,12 +174,23 @@ Every non-trivial change starts from a GitHub issue. Issues, not chat, are the s
 
 ### Hard gate
 
-A PR that introduces a new subsystem or makes an architectural choice **must** include one of:
+Every PR that closes an issue **must**:
+
+1. **Update `followup.md`**.
+   - `Status` is rewritten as if the PR is **already merged** — describe the new reality, not a plan.
+   - `Next` lists **3+ concrete priorities with issue numbers**. No placeholders like "TBD", "various improvements", or "polish". If there's genuinely nothing queued, open the next issue first and then land the PR.
+   - Replace the whole file — do not append. History lives in `git log`; `followup.md` is a snapshot.
+
+2. **Tick the corresponding checkbox(es) in `tasks/todo.md`** for items this PR lands. Do not delete ticked items — they are the record of work done.
+
+A PR that introduces a new subsystem or makes an architectural choice **additionally must** include one of:
 - A new ADR under `docs/adr/NNNN-title.md` (sequential numbering, format: Status / Date / Context / Decision / Reasoning / Consequences), OR
 - An update to an existing ADR (mark superseded if replaced), OR
 - A corresponding checklist update in `tasks/todo.md` if the plan already covered it.
 
 "New subsystem" means: a new top-level `app/` package, a new external service dependency, a new auth/permission mechanism, a new protocol (WS event type, bot command family), a new storage backend. When in doubt — write the ADR.
+
+**Reviewer blocks on a missing or stale `followup.md` update** — `must-fix`, not a nit. Without this, cross-session memory decays and the next session starts with stale priorities.
 
 ### gh CLI cheatsheet
 
