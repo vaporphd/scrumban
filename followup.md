@@ -2,15 +2,24 @@
 
 ## Status
 
-Branch `main`, in sync with `origin/main`. Phase 0 complete. Phase 1 issue #1 merged (`3dd6cf6`): User + TgLinkCode models + Alembic baseline with partial unique index for link-code activity.
+Branch `main` green through Phase 1 issue #2: auth endpoints
+(`POST /api/auth/{register,login,refresh}`, `GET /api/me`) + argon2
+password hashing + HS256 JWT access tokens + opaque rotating refresh
+tokens (ADR-0005) with transactional rotation and chain-revoke on
+replay. Migration `fcecc869fd60` adds `refresh_tokens`. Minimum-viable
+sanity tests cover happy paths and replay; full suite tracked in #4.
 
-Quality-gate epic #11 complete (pre-commit + pre-push + hardened CI + branch protection — `970a4c0`, `b3c3e68`).
-
-Agent infrastructure landed: seven specialized subagents under `.claude/agents/` (#13, merged `010ba7a`) with proactive triggers and tool whitelists. This PR (#15) wires them into the issue-driven flow via `CLAUDE.md` "Agent ownership" + a delegate-vs-direct decision matrix, and adds a proactive-trigger column to the README table.
+Phase 0 + Phase 1 issue #1 (User + TgLinkCode models, migration
+`5130146827ca`) already merged. Quality-gate epic #11 (pre-commit +
+pre-push + hardened CI + branch protection) in place. Agent
+infrastructure (#13, #15) landed.
 
 ## Next
 
-1. **Phase 1 — issue #2**: `feat(auth): register/login/refresh/me + JWT dependency`. Delegate to the `implementer` agent via the `Task` tool once this integration PR (#15) lands. Argon2 + python-jose + opaque hashed refresh tokens in DB; rotate on every refresh. ADR for refresh-token storage/rotation strategy if it deviates from the ADR-0003 auth baseline (likely needs one — call `architect` first).
-2. **Phase 1 — issue #4**: auth test suite against the live Postgres CI service.
-3. **Phase 1 — issue #3**: frontend Login/Register/Profile + Pinia auth store, 401 → refresh interceptor.
-4. **Phase 1 — separate ticket**: Telegram link-code endpoint + profile UI button. Intentionally out of #2 to keep that PR focused.
+1. **Phase 1 — issue #3**: frontend Login/Register/Profile + Pinia auth
+   store + 401-refresh interceptor. Consumes the endpoints from #2.
+2. **Phase 1 — issue #4**: full auth test suite against the live
+   Postgres CI service — transactional-refresh concurrency, expiry
+   edges, 401-distinction, replay edges beyond the sanity tests.
+3. **Phase 1 — separate ticket**: Telegram link-code endpoint +
+   profile UI button. Intentionally out of #2.

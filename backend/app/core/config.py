@@ -18,7 +18,7 @@ class RedisSettings(BaseSettings):
 class JWTSettings(BaseSettings):
     secret: str = "change-me-in-prod"
     algorithm: str = "HS256"
-    access_ttl_minutes: int = 30
+    access_ttl_minutes: int = 15
     refresh_ttl_days: int = 30
 
 
