@@ -10,7 +10,8 @@ from app.core.logging import configure_logging
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _ = app
     configure_logging(get_settings().log_level)
     yield
 
