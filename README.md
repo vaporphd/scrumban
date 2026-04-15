@@ -1,0 +1,101 @@
+# Scrumban
+
+Kanban board with a Telegram bot. Web UI (Vue 3) + REST/WS API (FastAPI) + aiogram bot, shared domain layer, PostgreSQL, Redis, MinIO.
+
+Full project plan lives in [`tasks/todo.md`](tasks/todo.md).
+
+## Stack
+
+- **Backend**: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, aiogram 3, APScheduler, Redis, MinIO
+- **Frontend**: Vue 3, TypeScript, Vite, Pinia, Vue Router
+- **Infra**: Docker Compose (PostgreSQL 16, Redis 7, MinIO)
+- **Quality**: ruff, mypy, pytest, pre-commit, GitHub Actions CI
+
+## Repo layout
+
+```
+backend/           FastAPI app, aiogram bot, shared services, Alembic migrations
+frontend/          Vue 3 SPA
+deploy/            docker-compose for dev & prod
+tasks/             plan, lessons
+.github/workflows/ CI
+```
+
+## Local dev
+
+### With Docker Compose (recommended)
+
+```sh
+cp backend/.env.example backend/.env
+# edit backend/.env — set TELEGRAM__BOT_TOKEN if you want the bot
+
+cd deploy
+docker compose up -d postgres redis minio
+docker compose up api bot frontend
+```
+
+Services:
+- API: http://localhost:8000 (health: `/api/health`, docs: `/docs`)
+- Frontend: http://localhost:5173
+- Postgres: `localhost:5432` (user/pass/db = `scrumban`)
+- Redis: `localhost:6379`
+- MinIO: http://localhost:9001 (console, admin/admin)
+
+### Backend standalone
+
+```sh
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -e . && pip install ruff mypy pytest pytest-asyncio
+
+# migrations
+alembic upgrade head
+
+# api
+uvicorn app.main_api:app --reload
+
+# bot (separate terminal)
+python -m app.main_bot
+```
+
+### Frontend standalone
+
+```sh
+cd frontend
+npm install
+npm run dev
+```
+
+## Common commands
+
+Backend:
+```sh
+cd backend
+ruff check . && ruff format .
+mypy app
+pytest
+pytest tests/test_health.py::test_health_ok   # single test
+alembic revision --autogenerate -m "description"
+alembic upgrade head
+```
+
+Frontend:
+```sh
+cd frontend
+npm run type-check
+npm run test
+npm run build
+```
+
+## Architecture at a glance
+
+Two Python processes (`api`, `bot`) share the same package (`app/`):
+- `app/api/` — FastAPI routers (REST + WS)
+- `app/bot/` — aiogram handlers, FSM, scheduler
+- `app/services/` — business logic, used by both
+- `app/repositories/` — data access
+- `app/realtime/` — WS connection manager backed by Redis pub/sub
+
+Any mutation (from web or bot) goes through a service → publishes an event to Redis → every connected WS client on the affected board gets it. This is the glue between the two surfaces.
+
+Telegram linking: user generates a 6-digit code in the web profile, sends `/start <code>` to the bot. Until linked, the bot refuses anything beyond `/start`.
