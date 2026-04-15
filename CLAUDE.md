@@ -142,6 +142,7 @@ pre-commit run --hook-stage pre-push --all-files
 - `vitest run` exits 1 on zero test files. `--passWithNoTests` is set while Phase 1 frontend tests are still pending.
 - Alembic autogenerate does **not** emit `DROP TYPE` for Postgres ENUMs in `downgrade()`. Add it manually, or round-trip will fail on the second upgrade.
 - SQLAlchemy's `sa.Enum(PyEnum, ...)` stores enum **names** (uppercase) by default. Use `values_callable=lambda e: [m.value for m in e]` to store values.
+- Pre-commit hooks call `backend/.venv/bin/mypy` and `backend/.venv/bin/pytest` by explicit path. If the venv doesn't exist (or is at a different path), the hook fails. Run the onboarding block from README first.
 
 Bypass via `--no-verify` is for emergencies. Never push `--no-verify` to a branch that will be merged to `main`.
 
