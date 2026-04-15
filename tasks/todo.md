@@ -113,15 +113,22 @@ scrumban/
 
 ## 5. Phases & tasks
 
-### Phase 0 — Foundation (день 1–2)
-- [ ] Инициализировать репо, `.gitignore` (вкл. `thoughts/`, `tasks/`)
-- [ ] `backend/pyproject.toml` с FastAPI, SQLAlchemy, Alembic, aiogram, pydantic-settings, argon2-cffi, python-jose, aioredis, aiobotocore, APScheduler
-- [ ] `frontend/` — `pnpm create vue@latest`, выбрать TS + Pinia + Vue Router
-- [ ] `deploy/docker-compose.yml`: postgres, redis, minio (dev)
-- [ ] `alembic init` + первый ревижн (пустой baseline)
-- [ ] Скелет `core/config.py` с pydantic-settings (читает `.env`)
-- [ ] ruff + mypy + pre-commit hooks
-- [ ] GitHub Actions: lint + type-check + pytest
+### Phase 0 — Foundation (день 1–2) ✅
+- [x] Инициализировать репо, `.gitignore` (вкл. `thoughts/`)
+- [x] `backend/pyproject.toml` (FastAPI, SQLAlchemy async, Alembic, aiogram 3, pydantic-settings, argon2-cffi, python-jose, redis, aioboto3, APScheduler, structlog)
+- [x] `frontend/` — Vue 3 + TS + Vite + Pinia + Vue Router + Vitest
+- [x] `deploy/docker-compose.yml`: postgres 16, redis 7, minio + api/bot/frontend сервисы
+- [x] `alembic.ini` + `alembic/env.py` (async engine), пустой `versions/`
+- [x] `core/config.py` с pydantic-settings (env_nested_delimiter="__")
+- [x] `core/logging.py` (structlog JSON)
+- [x] `db/base.py` (Base + TimestampMixin), `db/session.py` (async engine/sessionmaker)
+- [x] `api/health.py` (`GET /api/health`) + test
+- [x] `main_api.py` (FastAPI + CORS + lifespan), `main_bot.py` (aiogram 3 + Redis FSM)
+- [x] ruff + mypy + pytest конфиг в pyproject
+- [x] .pre-commit-config.yaml (ruff + базовые хуки)
+- [x] GitHub Actions CI: ruff, mypy, pytest, vue-tsc, vitest, vite build
+- [x] Dockerfile backend (slim, non-root, healthcheck) + frontend (multi-stage nginx)
+- [x] README с dev-flow, командами, архитектурой
 
 ### Phase 1 — Auth + users (день 3–4)
 - [ ] SQLAlchemy модели: `User`, `TgLinkCode`
