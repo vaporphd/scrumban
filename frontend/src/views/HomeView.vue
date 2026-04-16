@@ -1,21 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { http } from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
 
-const status = ref<string>('…')
-
-onMounted(async () => {
-  try {
-    const data = await http<{ status: string }>('/api/health')
-    status.value = data.status
-  } catch (e) {
-    status.value = `error: ${(e as Error).message}`
-  }
-})
+const auth = useAuthStore()
 </script>
 
 <template>
   <section>
-    <p>API health: <strong>{{ status }}</strong></p>
+    <h2>Welcome, {{ auth.user?.display_name }}</h2>
+    <p>
+      You're signed in as <strong>{{ auth.user?.username }}</strong>.
+    </p>
   </section>
 </template>
