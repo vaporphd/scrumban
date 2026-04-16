@@ -138,8 +138,8 @@ scrumban/
 - [x] `POST /api/auth/refresh` (#2, opaque rotating tokens per ADR-0005)
 - [x] `GET /api/me` (#2)
 - [x] FastAPI dependency `current_user` (Bearer JWT) (#2)
-- [ ] Vue: Login / Register / страница профиля
-- [ ] Тесты: регистрация, логин, 401 без токена, refresh-flow
+- [x] Vue: Login / Register / страница профиля (#3)
+- [ ] Тесты: регистрация, логин, 401 без токена, refresh-flow (#4)
 
 ### Phase 2 — Boards + columns + tasks CRUD (день 5–8)
 - [ ] Модели: `Board`, `Column`, `Task`, `Label`, `TaskLabel`
