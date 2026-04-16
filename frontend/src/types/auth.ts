@@ -7,6 +7,16 @@ export interface User {
   username: string
   display_name: string
   role: UserRole
+  // Telegram linkage (ADR-0003). Both fields are null until the user
+  // completes /start <code> in the bot.
+  tg_user_id: number | null
+  tg_username: string | null
+}
+
+export interface TgLinkCodeResponse {
+  code: string
+  expires_at: string // ISO 8601
+  bot_username: string | null
 }
 
 export interface TokenResponse {
