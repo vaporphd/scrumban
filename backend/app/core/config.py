@@ -24,9 +24,14 @@ class JWTSettings(BaseSettings):
 
 class TelegramSettings(BaseSettings):
     bot_token: str = ""
+    bot_username: str | None = None
     webhook_url: str = ""
     webhook_secret: str = ""
     mode: Literal["polling", "webhook"] = "polling"
+    # ADR-0003: 6-digit one-time link codes are short-lived. 15 minutes is the
+    # canonical value from the ADR; expose it as a knob in case prod operators
+    # want a tighter window.
+    link_code_ttl_minutes: int = 15
 
 
 class StorageSettings(BaseSettings):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -35,3 +36,22 @@ class UserRead(BaseModel):
     username: str
     display_name: str
     role: UserRole
+    # Defaults so call sites that build UserRead without these fields stay
+    # green; in practice `from_attributes=True` reads them off the User ORM
+    # row, which always has the columns.
+    tg_user_id: int | None = None
+    tg_username: str | None = None
+
+
+class TgLinkCodeResponse(BaseModel):
+    """One-time Telegram link code (ADR-0003).
+
+    `bot_username` is included so the frontend can render the
+    `t.me/<bot>?start=<code>` deep link in a single round-trip; when the
+    env isn't configured the field is null and the UI falls back to plain
+    `/start <code>` instructions.
+    """
+
+    code: str = Field(min_length=6, max_length=6)
+    expires_at: datetime
+    bot_username: str | None = None
