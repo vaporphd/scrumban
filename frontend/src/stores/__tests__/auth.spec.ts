@@ -32,6 +32,8 @@ describe('useAuthStore.login', () => {
           username: 'alex',
           display_name: 'Alex',
           role: 'member',
+          tg_user_id: null,
+          tg_username: null,
         }),
       )
     vi.stubGlobal('fetch', fetchMock)
@@ -46,6 +48,8 @@ describe('useAuthStore.login', () => {
       username: 'alex',
       display_name: 'Alex',
       role: 'member',
+      tg_user_id: null,
+      tg_username: null,
     })
     expect(store.isAuthenticated).toBe(true)
     expect(localStorage.getItem('access_token')).toBe('a')
