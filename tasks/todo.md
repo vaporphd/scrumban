@@ -148,6 +148,7 @@ scrumban/
 - [x] Vue: Login / Register / страница профиля (#3)
 - [x] Тесты: регистрация, логин, 401 без токена, refresh-flow (#4) — 17 tests, 99% coverage on `auth_service.py`
 - [x] Hardening: close username-enumeration timing leak in `authenticate()` — dummy argon2 verify on user-not-found branch + strict timing-parity assertion (#23)
+- [x] Telegram link-code endpoint (`POST /api/me/tg-link-code`) + Profile "Link Telegram" UI; `UserRead` / frontend `User` gain `tg_user_id` + `tg_username` (#20)
 
 ### Phase 2 — Boards + columns + tasks CRUD (день 5–8)
 - [ ] Модели: `Board`, `Column`, `Task`, `Label`, `TaskLabel`
