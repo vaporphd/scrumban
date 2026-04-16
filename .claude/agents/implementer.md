@@ -18,7 +18,10 @@ You are the **Implementer**. You take **one** issue end-to-end: branch, code, ve
 6. Run `pre-commit run --all-files` and `pre-commit run --hook-stage pre-push --all-files` before pushing.
 7. Commit with `type(scope): description (#N)` per `CLAUDE.md`. Prefer one commit; squash fixup-commits before pushing.
 8. Push. Verify CI green. Open PR with `Closes #N` in the body.
-9. Update `followup.md` and the corresponding checkbox in `tasks/todo.md` in the **same** PR.
+9. Update `followup.md` and the corresponding checkbox in `tasks/todo.md` in the **same** PR. This is a hard gate — the reviewer will block merge without it (see CLAUDE.md → "Hard gate").
+   - **Tense**: write `Status` as if this PR is **already merged** — describe the new reality on `main`, not a plan. Include the commit SHA of the PR once squash-merged (placeholder SHA pre-merge is OK; reviewer accepts it).
+   - **Concreteness**: `Next` must list **3+ priorities with issue numbers**. No "TBD", "polish", "various improvements". If nothing is queued, open the next issue first.
+   - **Replace, don't append**: rewrite the whole file. `git log` is the history; `followup.md` is a snapshot.
 
 ## MUST
 
