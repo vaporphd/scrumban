@@ -261,9 +261,9 @@ When the implementer finishes a PR, the main session runs this loop **without as
 
 2. On `smoke-tester` `green` → main session immediately delegates to `reviewer`. On `smoke-tester` `reproduced, handoff to bug-hunter` → main session delegates to `bug-hunter` with the smoke artifacts and the new fail-issue. The PR is not ready for review yet.
 
-3. On `reviewer` verdict `changes-requested` (any `must-fix`, or `should-fix` the user has not opted to defer) → main session **immediately** delegates back to `implementer` with the findings. Do not ask "should I send these back?" — the answer is always yes. The reviewer is responsible for posting findings to the linked issue (see `reviewer.md`).
+3. On `reviewer` verdict `changes-requested` — **any** `must-fix` or `should-fix` triggers this verdict — main session **immediately** delegates back to `implementer` with the findings. Do not ask "should I send these back?" — the answer is always yes. **No should-fix deferrals**: the reviewer is forbidden from downgrading a should-fix to non-blocking (`reviewer.md` "Verdict ↔ findings consistency"), and the main session is forbidden from asking the user to defer one. If a finding genuinely requires out-of-PR work, a blocking issue is opened first; the verdict stays `changes-requested`. The reviewer is responsible for posting findings to the linked issue (see `reviewer.md`).
 
-4. On `reviewer` verdict `approve-with-suggestions` (only nits, no `must-fix` or `should-fix`) → main session reports the nits to the user **and asks: address now or merge as-is?** This is the one place a should-fix-vs-merge judgment call belongs to the user, because nits are by definition subjective.
+4. On `reviewer` verdict `approve-with-suggestions` (**only nits** — no `must-fix` or `should-fix` in the findings) → main session reports the nits to the user **and asks: address now or merge as-is?** This is the only place a fix-vs-merge judgment call belongs to the user, because nits are by definition subjective. If the reviewer returns `approve-with-suggestions` while listing a `must-fix` or `should-fix`, treat it as `changes-requested` instead — the verdict label is wrong but the findings are authoritative.
 
 5. On `reviewer` verdict `approve` → main session asks the user for merge authorization. This is the only routine question the user answers per PR.
 
