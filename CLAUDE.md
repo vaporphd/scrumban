@@ -205,7 +205,7 @@ gh pr checks
 
 ## Agent ownership
 
-Seven specialized subagents live in `.claude/agents/*.md`. Each has a narrow scope, a tool whitelist, and a required response format. The top-level session **delegates** to them via the `Task` tool.
+Eight specialized subagents live in `.claude/agents/*.md`. Each has a narrow scope, a tool whitelist, and a required response format. The top-level session **delegates** to them via the `Task` tool.
 
 | Stage of the flow               | Agent          | Trigger                                                         |
 |---------------------------------|----------------|-----------------------------------------------------------------|
@@ -213,6 +213,7 @@ Seven specialized subagents live in `.claude/agents/*.md`. Each has a narrow sco
 | Design a new subsystem + ADR    | `architect`    | new `app/` package, new external dep, new protocol, new authz   |
 | Take issue #N → branch → PR     | `implementer`  | "implement #N", "take on issue #N"                              |
 | Fix a reported bug              | `bug-hunter`   | bug report with symptom; starts with failing regression test    |
+| Smoke-test a PR end-to-end      | `smoke-tester` | frontend changes — proactive after `implementer` opens PR, before `reviewer` |
 | Pre-merge review                | `reviewer`     | **proactive** — run before any `gh pr merge`                    |
 | Hooks / workflows / compose     | `ci-devops`    | touching `.github/`, `.pre-commit-config.yaml`, `deploy/`, Dockerfiles |
 | Sync docs with code             | `docs-writer`  | **proactive** — after a PR that changes setup, commands, or conventions |
@@ -224,6 +225,7 @@ The main session **delegates** these:
 - Any non-trivial read-only investigation (> 3 files or > 5 minutes of grep) → `explorer`
 - Any production code change scoped to a single issue → `implementer`
 - Any bug report with a reproducer → `bug-hunter`
+- Any PR that touches `frontend/` → `smoke-tester` (after `implementer`, before `reviewer`)
 - Every PR before `gh pr merge` → `reviewer`
 - Any CI / hook / infra change → `ci-devops`
 - Any docs update driven by a code change → `docs-writer` (may run proactively after merges)
