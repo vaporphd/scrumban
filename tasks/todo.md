@@ -139,7 +139,7 @@ scrumban/
 - [x] `GET /api/me` (#2)
 - [x] FastAPI dependency `current_user` (Bearer JWT) (#2)
 - [x] Vue: Login / Register / страница профиля (#3)
-- [ ] Тесты: регистрация, логин, 401 без токена, refresh-flow (#4)
+- [x] Тесты: регистрация, логин, 401 без токена, refresh-flow (#4) — 17 tests, 99% coverage on `auth_service.py`
 
 ### Phase 2 — Boards + columns + tasks CRUD (день 5–8)
 - [ ] Модели: `Board`, `Column`, `Task`, `Label`, `TaskLabel`
