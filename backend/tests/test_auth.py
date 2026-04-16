@@ -22,6 +22,9 @@ output in the PR.
 from __future__ import annotations
 
 import asyncio
+import secrets
+import statistics
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -184,17 +187,24 @@ async def test_login_unknown_user_401(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_login_response_parity_wrong_vs_unknown(client: AsyncClient) -> None:
-    """Unknown-user and wrong-password 401s must be byte-identical at the
-    HTTP layer.
+    """Unknown-user and wrong-password 401s must be indistinguishable.
 
-    Same status code, same body, same `WWW-Authenticate` header — so the
-    response itself does not leak "this username exists". We deliberately
-    do NOT assert latency parity here: as of this PR, `auth_service.
-    authenticate` short-circuits when the user lookup returns `None`
-    (skipping argon2 verify), which is a real timing side-channel that
-    lets an attacker probe usernames. That's tracked as a follow-up bug
-    fix — once the service runs a dummy argon2 hash on the
-    user-not-found branch, the timing-parity assertion goes here.
+    Asserts two things in one test:
+
+    1. HTTP-shape parity — same status, same body, same `WWW-Authenticate`
+       header. The response itself does not leak "this username exists".
+    2. Wall-time parity — the unknown-user path runs a dummy argon2 verify
+       (see `auth_service._DUMMY_PASSWORD_HASH`) so its latency tracks the
+       wrong-password path. Without the dummy verify, locally measured
+       wrong-password ≈ 30 ms vs unknown-user ≈ 4 ms (~7x), enabling
+       username enumeration. Locks the fix from #23.
+
+    Method: N=10 samples per branch, compare medians (mean is too sensitive
+    to argon2's fat right tail from GC pauses and scheduler jitter). The
+    30% tolerance is wide enough to absorb noise on a busy CI runner but
+    tight enough to catch a regression — argon2 dominates wall-time at
+    ~25-30ms, so anything else (DB lookup, JSON parse) is well under 30%
+    of the dominant term.
     """
     await client.post(
         "/api/auth/register",
@@ -205,20 +215,64 @@ async def test_login_response_parity_wrong_vs_unknown(client: AsyncClient) -> No
         },
     )
 
-    wrong = await client.post(
-        "/api/auth/login",
-        json={"username": "frank", "password": "wrong-horse-battery"},
-    )
-    unknown = await client.post(
-        "/api/auth/login",
-        json={"username": "ghost", "password": "any-password-value"},
-    )
+    # Warm up argon2: the very first verify in a process is slower (lazy
+    # memory alloc inside the C extension). Two warmup pairs is enough to
+    # take that off the table for the median calculation.
+    for _ in range(2):
+        await client.post(
+            "/api/auth/login",
+            json={"username": "frank", "password": "wrong"},
+        )
+        await client.post(
+            "/api/auth/login",
+            json={"username": "warmup-ghost", "password": "wrong"},
+        )
 
-    assert wrong.status_code == 401
-    assert unknown.status_code == 401
-    assert wrong.json() == unknown.json()
-    assert wrong.headers.get("www-authenticate") == unknown.headers.get("www-authenticate")
-    assert wrong.headers.get("www-authenticate") == "Bearer"
+    n = 10
+    wrong_samples: list[float] = []
+    unknown_samples: list[float] = []
+    last_wrong = None
+    last_unknown = None
+    for _ in range(n):
+        t0 = time.perf_counter()
+        last_wrong = await client.post(
+            "/api/auth/login",
+            json={"username": "frank", "password": "wrong-horse-battery"},
+        )
+        wrong_samples.append(time.perf_counter() - t0)
+
+        t0 = time.perf_counter()
+        # Randomize unknown username per sample so we don't accidentally hit
+        # any caching path the DB might add later.
+        last_unknown = await client.post(
+            "/api/auth/login",
+            json={"username": f"ghost-{secrets.token_hex(4)}", "password": "any"},
+        )
+        unknown_samples.append(time.perf_counter() - t0)
+
+    assert last_wrong is not None
+    assert last_unknown is not None
+
+    # Response-shape parity (carried over from the original assertion).
+    assert last_wrong.status_code == 401
+    assert last_unknown.status_code == 401
+    assert last_wrong.json() == last_unknown.json()
+    assert last_wrong.headers.get("www-authenticate") == last_unknown.headers.get(
+        "www-authenticate"
+    )
+    assert last_wrong.headers.get("www-authenticate") == "Bearer"
+
+    # Timing parity. Median, not mean — argon2's tail latency from the odd
+    # GC pause skews means upward asymmetrically.
+    median_wrong = statistics.median(wrong_samples)
+    median_unknown = statistics.median(unknown_samples)
+    delta = abs(median_wrong - median_unknown) / max(median_wrong, median_unknown)
+    assert delta < 0.30, (
+        f"timing-leak regression: wrong-password median={median_wrong * 1000:.2f}ms vs "
+        f"unknown-user median={median_unknown * 1000:.2f}ms (delta={delta * 100:.1f}%, "
+        "tolerance=30%). The unknown-user branch in auth_service.authenticate must run "
+        "a dummy argon2 verify to keep wall-time comparable; see #23."
+    )
 
 
 # ---------------------------------------------------------------------------

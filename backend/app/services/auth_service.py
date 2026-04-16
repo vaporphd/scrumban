@@ -64,9 +64,25 @@ async def register(
     return user
 
 
+# Precomputed at import time. The dummy plaintext value itself doesn't matter —
+# what matters is that we have a real argon2 hash to verify against on the
+# user-not-found branch so that path takes comparable wall-time to the
+# wrong-password path. Without this, an attacker can enumerate valid usernames
+# via response-time delta (locally measured ~7x: 30ms vs 4ms). See #23.
+_DUMMY_PASSWORD_HASH = hash_password("dummy-for-timing-parity-only-not-a-real-secret")
+
+
 async def authenticate(session: AsyncSession, *, username: str, password: str) -> User:
     user = await user_repo.get_by_username(session, username.strip().lower())
-    if user is None or not verify_password(password, user.password_hash):
+    if user is None:
+        # Run a dummy verify so the unknown-user path takes the same wall-time
+        # as the wrong-password path. Result is discarded; the AuthError is the
+        # same either way. Splitting the original `or`-chain into an explicit
+        # two-branch form keeps this readable — the alternative (synthesizing
+        # a fake `user` to feed `verify_password`) is uglier and hides intent.
+        verify_password(password, _DUMMY_PASSWORD_HASH)
+        raise AuthError("invalid_credentials", "Invalid username or password.")
+    if not verify_password(password, user.password_hash):
         raise AuthError("invalid_credentials", "Invalid username or password.")
     return user
 
