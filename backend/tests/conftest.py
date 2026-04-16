@@ -16,6 +16,7 @@ session-scoped loop is the cleanest fix.
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import AsyncIterator
 
 import pytest_asyncio
@@ -57,8 +58,12 @@ async def auth_pair(client: AsyncClient) -> tuple[str, str, str]:
     Avoids repeating the three-call dance across tests that just need a
     valid Bearer token. Each test gets its own user since `_clean_db`
     truncates between tests.
+
+    Username is randomized so a future test that wants to register a
+    second user manually cannot collide with this fixture and 409.
+    Password stays constant — not at risk of collision.
     """
-    username = "fixture-user"
+    username = f"fixture-user-{secrets.token_hex(4)}"
     password = "correct-horse-battery"
     await client.post(
         "/api/auth/register",

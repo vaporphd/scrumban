@@ -284,21 +284,18 @@ async def test_register_integrity_error_409(
 
 
 @pytest.mark.asyncio
-async def test_access_token_expired_401(
-    client: AsyncClient, auth_pair: tuple[str, str, str]
-) -> None:
+async def test_access_token_expired_401(client: AsyncClient) -> None:
     """Forge a token with past `exp` instead of freezing time.
 
     Freezing time in asyncio is fragile (event loop timers, DB clock vs
     process clock, etc). Signing a JWT with `exp = now - 60s` using the
     same secret/algorithm as `app.core.security.issue_access_token`
     gives us a deterministic expired-but-otherwise-valid token.
-    """
-    _, _, _ = auth_pair
 
-    # Confirm we have a user to target (id=1 after the clean truncate).
-    # The value of `sub` only matters if decoding succeeds — which it
-    # should not, because `exp` is in the past.
+    No user fixture needed: `jose.jwt.decode` raises
+    `ExpiredSignatureError` before any DB lookup happens, so `sub`
+    pointing at a non-existent id is fine.
+    """
     settings = get_settings()
     now = datetime.now(tz=UTC)
     expired = jwt.encode(
@@ -437,16 +434,19 @@ async def test_refresh_expired_401(client: AsyncClient, db_session: AsyncSession
 async def test_refresh_concurrent_race_single_winner(
     client: AsyncClient, auth_pair: tuple[str, str, str], db_session: AsyncSession
 ) -> None:
-    """Two `/api/auth/refresh` calls with the same token in flight at once.
+    """Smoke-test that two in-flight refresh calls never both succeed.
 
-    Per ADR-0005 rotation is transactional: the `SELECT ... FOR UPDATE`
-    inside `auth_service.refresh` serialises the two requests. The
-    winner sees a live row and gets a fresh (access, refresh) pair;
-    the loser sees a row with `revoked_at` already set and hits the
-    replay branch → 401 + chain-revoke.
+    Two `asyncio.gather`'d POSTs over `httpx.AsyncClient` /
+    `ASGITransport` may genuinely interleave at await points or run
+    effectively sequentially — both produce 1x200 + 1x401 (the second
+    case via the replay branch already locked in by
+    `test_refresh_rotates`). So this test does NOT directly observe
+    the `SELECT ... FOR UPDATE` serialization invariant from ADR-0005;
+    truly exercising the FOR UPDATE path would require injecting a
+    barrier mid-transaction, which is out of scope here.
 
-    The invariant we assert here: exactly one 200, at least one 401,
-    and a single un-revoked token in the DB at the end.
+    What we do assert at the HTTP / DB layer: exactly one 200, exactly
+    one 401, and at most one live (non-revoked) refresh row left.
     """
     _, _, refresh_token = auth_pair
 
