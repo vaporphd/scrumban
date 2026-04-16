@@ -14,11 +14,9 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  // fullyParallel stays false for v1: specs share the same backing database and
-  // some sequence register → logout → login. Unique random usernames per test
-  // exist, so flipping this to true is a future step once each spec is audited
-  // for independence from shared state.
-  fullyParallel: false,
+  // Parallel-safe: every spec mints its own user via `randomUsername()` (see
+  // tests/e2e/helpers.ts), so concurrent workers never collide on the shared DB.
+  fullyParallel: true,
   retries: 0,
   reporter: [
     ['list'],

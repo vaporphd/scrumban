@@ -20,8 +20,11 @@ test('wrong password keeps the user on /login with an error and no token', async
   await page.locator('input[autocomplete="current-password"]').fill('definitely-wrong')
   await page.getByRole('button', { name: /Sign in/ }).click()
 
-  // Assert: error visible, URL still /login, no token leaked into storage.
-  await expect(page.locator('p.error[role="alert"]')).toBeVisible()
+  // Assert: error visible with non-empty text, URL still /login, no token leaked.
+  // Role/text selectors over CSS classes — see tests/e2e/README.md.
+  const alert = page.getByRole('alert')
+  await expect(alert).toBeVisible()
+  await expect(alert).not.toHaveText('')
   expect(new URL(page.url()).pathname).toBe('/login')
 
   const access = await page.evaluate(() => localStorage.getItem('access_token'))
