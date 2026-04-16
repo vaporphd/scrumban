@@ -81,3 +81,8 @@ addopts = "-ra --strict-markers"
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/main_*.py", "alembic/*"]
+# Coverage's legacy `ctrace` core (default on Python 3.12) miscounts
+# lines after `await` in async functions — collapses our auth_service
+# coverage from 99% to 53% in CI. The PEP 669 `sysmon` core (Python
+# 3.12+) traces async resumption points correctly. Pin it.
+core = "sysmon"
