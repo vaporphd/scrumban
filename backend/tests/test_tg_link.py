@@ -72,14 +72,10 @@ async def test_issue_link_code_invalidates_prior_active(
     active_count = await db_session.scalar(
         select(func.count()).select_from(TgLinkCode).where(TgLinkCode.consumed_at.is_(None))
     )
-    assert active_count == 1, (
-        f"expected exactly one active link code after re-issue, got {active_count}"
-    )
+    assert active_count == 1, f"expected 1 active code after re-issue, got {active_count}"
 
     total_count = await db_session.scalar(select(func.count()).select_from(TgLinkCode))
-    assert total_count == 2, (
-        f"expected two total rows (first consumed, second active), got {total_count}"
-    )
+    assert total_count == 2, f"expected 2 total rows (1 consumed, 1 active), got {total_count}"
 
 
 @pytest.mark.asyncio
