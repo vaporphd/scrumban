@@ -27,6 +27,8 @@ function safeRedirectTarget(): string {
 }
 
 async function submit(): Promise<void> {
+  // Re-entrance guard: Enter-in-input can re-fire submit even while the button is disabled.
+  if (submitting.value) return
   error.value = null
   submitting.value = true
   try {

@@ -99,9 +99,9 @@ export const useAuthStore = defineStore('auth', {
         try {
           await this.loadMe()
         } catch {
-          // Either /me returned 401 after the fetch wrapper's refresh dance failed,
-          // or the network is down. In both cases drop the session — the user will
-          // re-authenticate.
+          // Handles the network-error / non-401 path during /me. The 401-then-refresh-fail
+          // path is already resolved by onAuthFailure → logout in the fetch wrapper, so
+          // calling logout() again here is an idempotent safety net.
           this.logout()
         }
       }

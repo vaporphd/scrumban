@@ -69,14 +69,12 @@ async function doRefresh(): Promise<string | null> {
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
     if (!res.ok) {
-      clearTokens()
       return null
     }
     const tokens = (await res.json()) as TokenResponse
     setTokens(tokens.access_token, tokens.refresh_token)
     return tokens.access_token
   } catch {
-    clearTokens()
     return null
   }
 }
@@ -112,6 +110,9 @@ async function httpInner<T>(
 
   if (!newAccess) {
     const err = await toApiError(res)
+    // Refresh failed — clear tokens and notify the store as one explicit sequence here,
+    // rather than splitting the teardown between doRefresh() and this caller.
+    clearTokens()
     onAuthFailure?.()
     throw err
   }
