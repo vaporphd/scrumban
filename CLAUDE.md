@@ -252,3 +252,21 @@ Implicit (proactive): the agent's `description` field triggers automatic delegat
 ### Invariant
 
 Every PR produced by an agent still goes through the three-layer quality gate (pre-commit, pre-push, CI) and branch protection on `main`. Agents don't get a bypass — they just do the work, and the gate checks the output.
+
+### Pre-merge review loop (autonomous — no main-session questions)
+
+When the implementer finishes a PR, the main session runs this loop **without asking the user between steps**. The user authorizes only the final merge.
+
+1. Implementer reports `ready to merge pending authorization` → main session **immediately** delegates to `smoke-tester` (if PR touches `frontend/`) or `reviewer` (if backend-only). Do not ask "should I run reviewer?" — the answer is always yes.
+
+2. On `smoke-tester` `green` → main session immediately delegates to `reviewer`. On `smoke-tester` `reproduced, handoff to bug-hunter` → main session delegates to `bug-hunter` with the smoke artifacts and the new fail-issue. The PR is not ready for review yet.
+
+3. On `reviewer` verdict `changes-requested` (any `must-fix`, or `should-fix` the user has not opted to defer) → main session **immediately** delegates back to `implementer` with the findings. Do not ask "should I send these back?" — the answer is always yes. The reviewer is responsible for posting findings to the linked issue (see `reviewer.md`).
+
+4. On `reviewer` verdict `approve-with-suggestions` (only nits, no `must-fix` or `should-fix`) → main session reports the nits to the user **and asks: address now or merge as-is?** This is the one place a should-fix-vs-merge judgment call belongs to the user, because nits are by definition subjective.
+
+5. On `reviewer` verdict `approve` → main session asks the user for merge authorization. This is the only routine question the user answers per PR.
+
+6. After implementer pushes a review-fix commit → main session **immediately** re-invokes `reviewer` (and `smoke-tester` first if frontend changed). Loop until step 4 or 5.
+
+The loop terminates only at step 5 (approve → user merges) or when an agent reports a blocker it cannot resolve. The user can always interrupt and pivot at any step.

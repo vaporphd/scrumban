@@ -134,6 +134,7 @@ scrumban/
 - [x] 7 Claude Code subagent profiles wired into the issue-driven flow (#13, #15)
 - [x] `followup.md` hardened as a hard gate (#18)
 - [x] Smoke-tester agent + Playwright e2e baseline (#24)
+- [x] Autonomous pre-merge review loop codified in CLAUDE.md + reviewer/implementer agents (#29)
 
 ### Phase 1 — Auth + users (день 3–4)
 - [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)
