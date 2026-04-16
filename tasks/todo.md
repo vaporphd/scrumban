@@ -130,6 +130,11 @@ scrumban/
 - [x] Dockerfile backend (slim, non-root, healthcheck) + frontend (multi-stage nginx)
 - [x] README с dev-flow, командами, архитектурой
 
+### Developer experience (cross-phase)
+- [x] 7 Claude Code subagent profiles wired into the issue-driven flow (#13, #15)
+- [x] `followup.md` hardened as a hard gate (#18)
+- [x] Smoke-tester agent + Playwright e2e baseline (#24)
+
 ### Phase 1 — Auth + users (день 3–4)
 - [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)
 - [x] Миграция (#1, `5130146827ca`)
