@@ -12,8 +12,11 @@ repos:
       - id: check-merge-conflict
 
   # ── Backend: fast linting on commit ────────────────────────────────────
+  # Keep this rev in sync with `ruff==X.Y.Z` in .github/workflows/ci.yml
+  # AND `ruff==X.Y.Z` in backend/pyproject.toml [dependency-groups].dev.
+  # See CLAUDE.md "Known gotchas" — drift forces SKIP=ruff-format bypasses.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.2
+    rev: v0.15.11
     hooks:
       - id: ruff
         args: [--fix]

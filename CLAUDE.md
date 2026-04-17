@@ -143,6 +143,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Alembic autogenerate does **not** emit `DROP TYPE` for Postgres ENUMs in `downgrade()`. Add it manually, or round-trip will fail on the second upgrade.
 - SQLAlchemy's `sa.Enum(PyEnum, ...)` stores enum **names** (uppercase) by default. Use `values_callable=lambda e: [m.value for m in e]` to store values.
 - Pre-commit hooks call `backend/.venv/bin/mypy` and `backend/.venv/bin/pytest` by explicit path. If the venv doesn't exist (or is at a different path), the hook fails. Run the onboarding block from README first.
+- Hook + CI ruff versions are pinned to the same exact tag in `.pre-commit-config.yaml` (`ruff-pre-commit v0.15.11`), `.github/workflows/ci.yml` (`pip install ruff==0.15.11`), and `backend/pyproject.toml` (`ruff==0.15.11`). Bump them together. Drift forces `SKIP=ruff-format` bypasses — same family as `--no-verify` per below.
 
 Bypass via `--no-verify` is for emergencies. Never push `--no-verify` to a branch that will be merged to `main`.
 
