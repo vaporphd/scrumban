@@ -137,6 +137,7 @@ scrumban/
 - [x] Autonomous pre-merge review loop codified in CLAUDE.md + reviewer/implementer agents (#29)
 - [x] Reviewer should-fix is non-negotiable; no tech-debt deferral (#32)
 - [x] Pin ruff to the same exact version across pre-commit, CI, and pyproject.toml (#33)
+- [x] Fully autonomous loop — auto-merge on clean approve, nits are bugs, required smoke coverage, smoke-fail → implementer (#38)
 
 ### Phase 1 — Auth + users (день 3–4)
 - [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)
