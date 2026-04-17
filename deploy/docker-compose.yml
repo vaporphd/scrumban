@@ -82,6 +82,14 @@ services:
     image: node:22-alpine
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      # Point vite's dev proxy at the api service over Docker's bridge network.
+      # The default (localhost:8000, wired in vite.config.ts) is correct for
+      # host-side `npm run dev` but would hit the frontend container itself
+      # from inside compose. See issue 25.
+      VITE_API_PROXY_TARGET: http://api:8000
+    depends_on:
+      - api
     ports:
       - "5173:5173"
     volumes:

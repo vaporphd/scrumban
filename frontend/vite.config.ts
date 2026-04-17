@@ -2,6 +2,16 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
+// Dev proxy target. Defaults to localhost:8000 for host-side `npm run dev`.
+// Override in compose (see deploy/docker-compose.yml) with
+// `VITE_API_PROXY_TARGET=http://api:8000` so the browser's /api and /ws calls
+// reach the api service via Docker DNS instead of the frontend container itself.
+const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8000'
+// ws:// vs http:// — vite accepts http(s) targets for websocket proxying when
+// `ws: true` is set, but swapping the scheme keeps intent explicit and matches
+// the previous config shape.
+const WS_PROXY_TARGET = API_PROXY_TARGET.replace(/^http/, 'ws')
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -14,11 +24,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: API_PROXY_TARGET,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: WS_PROXY_TARGET,
         ws: true,
       },
     },
