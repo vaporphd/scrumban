@@ -19,21 +19,16 @@ npx playwright install --with-deps chromium
 The agent is responsible for the stack lifecycle, but to run the suite by hand:
 
 ```sh
-# 1. Bring up backend services from the repo root.
-cd deploy && docker compose up -d postgres redis minio api bot
-# 2. Run the frontend dev server on the host (NOT in compose — see "Why not compose
-#    frontend" below). From a second shell:
-cd frontend && npm run dev
-# 3. Wait for both endpoints to respond.
+# 1. Bring up the full stack from the repo root.
+cd deploy && docker compose up -d postgres redis minio api bot frontend
+# 2. Wait for both endpoints to respond.
 curl -fsS http://localhost:8000/api/health
 curl -fsSI http://localhost:5173 | head -1
-# 4. Run the specs.
+# 3. Run the specs.
 cd frontend && npm run e2e
 ```
 
-### Why not compose frontend
-
-`vite.config.ts` proxies `/api` to `http://localhost:8000`. In the compose `frontend` container `localhost` is the container itself, so the proxy can't reach the `api` service and every login/register call returns 502. Run `npm run dev` on the host instead (or stop the compose `frontend` service first: `docker compose stop frontend`). Wiring the proxy to be compose-aware is tracked separately so it doesn't expand this PR's scope.
+The compose `frontend` service sets `VITE_API_PROXY_TARGET=http://api:8000` so vite's dev proxy reaches the api service over Docker's bridge network (see issue 25). Running `npm run dev` on the host still works — the env var defaults to `http://localhost:8000` — useful when iterating on the Vue app without rebuilding the compose frontend container.
 
 Artifacts (screenshots, videos, traces) land under `frontend/tests/e2e/artifacts/` on failure; the HTML report lands under `frontend/playwright-report/`. Both directories are gitignored — never commit them.
 
