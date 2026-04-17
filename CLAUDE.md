@@ -258,6 +258,8 @@ Every PR produced by an agent still goes through the three-layer quality gate (p
 
 When the implementer finishes a PR, the main session runs this loop **without asking the user between steps or at the end**. Authorization 2026-04-17: auto-merge is enabled for PRs produced through this loop. The user interrupts only to pivot or when an agent reports a blocker.
 
+Quick-reference diagram: [`docs/loop.md`](docs/loop.md).
+
 1. Implementer reports `ready to merge pending authorization` → main session **immediately** delegates to `smoke-tester` (if PR touches `frontend/`, OR if PR adds/modifies any user-visible feature per `reviewer.md` "Smoke-test coverage gate"; effectively: any non-pure-infra PR) or `reviewer` (if truly backend-only / infra-only / docs-only). Do not ask "should I run reviewer?" — the answer is always yes.
 
 2. On `smoke-tester` `green` → main session immediately delegates to `reviewer`. On `smoke-tester` `reproduced, handoff to implementer` → main session **immediately** delegates to `implementer` with the smoke artifacts (failing scenario name, first 30 lines of failure output, artifact directory path) as the brief. Implementer fixes the regression on the same branch; loop re-enters at step 1 (smoke-tester re-runs against the new commit). **No new issue is filed** — the failing spec IS the reproducer; the fix belongs in this PR. If implementer determines the failure is pre-existing (not caused by this PR's diff), they escalate to `bug-hunter` with the artifacts and pause this PR — that's an exception path, the implementer's call based on `git diff`, not the main session's default route.
