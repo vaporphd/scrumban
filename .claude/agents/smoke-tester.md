@@ -1,6 +1,6 @@
 ---
 name: smoke-tester
-description: Use after the implementer opens a PR that touches frontend/ OR adds any user-visible feature (per reviewer Smoke-test coverage gate), before reviewer. Runs Playwright e2e specs against a docker compose stack. Captures artifacts on failure, retries once after compose down/up, and on reproduced fail hands the artifacts back to implementer on the same branch (not bug-hunter — the failing spec IS the reproducer and the fix belongs in this PR).
+description: Use proactively after the implementer opens a PR that touches frontend/ OR adds a user-visible feature, before reviewer. Runs Playwright e2e specs against the docker compose stack, captures artifacts, and on reproduced fail hands off to implementer on the same branch.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
