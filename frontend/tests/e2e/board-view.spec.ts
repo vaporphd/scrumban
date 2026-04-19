@@ -99,12 +99,17 @@ test('register → seed board with 2 columns → /boards/:id renders both column
   // Order check: the issue spec calls for the columns to render in
   // position order (col1 was created first → position 1000; col2 second
   // → position 2000). We assert via the rendered DOM order. Reading
-  // `data-testid` off `.column-strip > li` and comparing to the expected
-  // sequence is unambiguous and survives any future style change to the
-  // strip's flex direction or padding.
+  // `data-testid` off `.column-strip > li[data-testid^="board-detail-column-"]`
+  // and comparing to the expected sequence is unambiguous and survives any
+  // future style change to the strip's flex direction or padding.
+  //
+  // The `data-testid^=` filter is load-bearing: as of issue #82 the strip
+  // also contains a trailing `<li data-testid="board-detail-add-column-host">`
+  // for the strip-end "+ Add column" trigger. A naive `> li` selector picks
+  // that up too and breaks this assertion's exact-equality check.
   const renderedIds = await page
     .getByTestId('board-detail-columns')
-    .locator('> li')
+    .locator('> li[data-testid^="board-detail-column-"]')
     .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')))
   expect(renderedIds).toEqual([
     `board-detail-column-${col1Id}`,
