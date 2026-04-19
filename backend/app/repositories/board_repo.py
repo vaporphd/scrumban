@@ -16,8 +16,30 @@ async def list_active(session: AsyncSession) -> list[Board]:
     Writes (create / update / archive) land with the endpoint issues
     (#69+). This read-only surface is enough for the endpoint issues to
     build on without depending on an unrelated repository PR.
+
+    `id DESC` is a deterministic tiebreaker — Postgres `now()` is fixed
+    per transaction, so multiple boards inserted in one txn share an
+    identical `created_at` and would otherwise come back in undefined
+    order. `id` is monotonic so newest-id ≈ newest-row.
     """
-    stmt = select(Board).where(Board.archived_at.is_(None)).order_by(Board.created_at.desc())
+    stmt = (
+        select(Board)
+        .where(Board.archived_at.is_(None))
+        .order_by(Board.created_at.desc(), Board.id.desc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def list_all(session: AsyncSession) -> list[Board]:
+    """Return every board (archived and active), newest first.
+
+    Used by `GET /api/boards?include_archived=true` (issue #70). Kept
+    as a sibling of `list_active` rather than a parameter on it so the
+    common case (`list_active`) stays a one-line call site. Same
+    `id DESC` tiebreaker as `list_active` — see that docstring.
+    """
+    stmt = select(Board).order_by(Board.created_at.desc(), Board.id.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
