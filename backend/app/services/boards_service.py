@@ -55,8 +55,21 @@ async def get_board(session: AsyncSession, *, actor: User, board_id: int) -> Boa
     raise NotImplementedError("get_board lands with the board-detail endpoint issue")
 
 
-async def list_boards(session: AsyncSession, *, actor: User) -> list[Board]:
-    raise NotImplementedError("list_boards lands in issue #70")
+async def list_boards(
+    session: AsyncSession, *, actor: User, include_archived: bool = False
+) -> list[Board]:
+    """List boards visible to `actor`, newest first.
+
+    By default returns only non-archived boards (the common UI case).
+    `include_archived=True` returns every board for admin / archive
+    views. RBAC is Phase 7 — for now any authenticated user can list
+    every board, matching the rest of the Phase 2 endpoints. The
+    `actor` parameter is kept in the signature so the future RBAC
+    filter can land without a router change.
+    """
+    if include_archived:
+        return await board_repo.list_all(session)
+    return await board_repo.list_active(session)
 
 
 async def update_board(

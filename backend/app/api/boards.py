@@ -35,3 +35,24 @@ async def create_board(
     """
     board = await boards_service.create_board(session, creator=user, payload=payload)
     return BoardRead.model_validate(board)
+
+
+@router.get(
+    "",
+    response_model=list[BoardRead],
+)
+async def list_boards(
+    user: CurrentUser,
+    session: SessionDep,
+    include_archived: bool = False,
+) -> list[BoardRead]:
+    """List boards, newest first.
+
+    By default excludes archived boards (the common UI case). Pass
+    `?include_archived=true` to include them. 401 on missing/bad token
+    is handled by the `CurrentUser` dependency.
+    """
+    boards = await boards_service.list_boards(
+        session, actor=user, include_archived=include_archived
+    )
+    return [BoardRead.model_validate(b) for b in boards]

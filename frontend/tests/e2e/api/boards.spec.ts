@@ -1,8 +1,10 @@
-// Spec #api-3: POST /api/boards (issue #69) — backend smoke per ADR-0008.
+// Spec #api-3: /api/boards (issues #69 + #70) — backend smoke per ADR-0008.
 //
-// Pure HTTP, no browser. Two scenarios from the issue body:
-//   1. POST /api/boards with auth → 201 + BoardRead-shaped body
-//   2. POST /api/boards without auth → 401
+// Pure HTTP, no browser. Scenarios:
+//   1. POST /api/boards with auth → 201 + BoardRead-shaped body (issue #69).
+//   2. POST /api/boards without auth → 401 (issue #69).
+//   3. GET  /api/boards without auth → 401 (issue #70).
+//   4. GET  /api/boards with auth after creating two boards → both present (issue #70).
 //
 // The spec mints its own user (register + login) inline. Idempotent
 // across re-runs because the username is suffixed with crypto.randomUUID
@@ -12,6 +14,13 @@
 // We hit the api directly on http://127.0.0.1:8000/api to mirror the
 // existing `health.spec.ts` shape; the vite proxy is irrelevant for the
 // `request` context.
+//
+// TODO(#73): once `POST /api/boards/{id}/archive` lands, extend this
+// spec with the "archive one → list excludes it; ?include_archived=true
+// includes it" scenario from issue #70's body. Today the archive
+// service method is `NotImplementedError`, so driving the archive path
+// over HTTP is impossible. The pytest suite covers both filter
+// branches directly via the repo (see `backend/tests/test_boards_list.py`).
 
 import { expect, test } from '@playwright/test'
 
@@ -67,4 +76,63 @@ test('POST /api/boards with auth returns 201 and a BoardRead-shaped body', async
   expect(typeof body.created_at).toBe('string')
   expect(typeof body.updated_at).toBe('string')
   expect(body.archived_at).toBeNull()
+})
+
+test('GET /api/boards without auth returns 401', async ({ request }) => {
+  const response = await request.get(`${API}/boards`)
+  expect(response.status()).toBe(401)
+  expect(response.headers()['www-authenticate']).toBe('Bearer')
+})
+
+test('GET /api/boards returns boards created by the authenticated user', async ({
+  request,
+}) => {
+  // Mint a fresh user and log in.
+  const username = uniq('boards_list_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Boards List E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  // Create two boards.
+  const firstName = uniq('list-e2e-first')
+  const secondName = uniq('list-e2e-second')
+  const first = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: firstName, description: 'first' },
+  })
+  expect(first.status()).toBe(201)
+  const second = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: secondName, description: 'second' },
+  })
+  expect(second.status()).toBe(201)
+  const firstId = (await first.json()).id
+  const secondId = (await second.json()).id
+
+  // List boards. Other tests in this file (and concurrent workers) create
+  // their own boards too, so we assert ours are present rather than
+  // asserting the full list size.
+  const listed = await request.get(`${API}/boards`, { headers: auth })
+  expect(listed.status()).toBe(200)
+  const body = await listed.json()
+  expect(Array.isArray(body)).toBe(true)
+  const ids = new Set(body.map((b: { id: number }) => b.id))
+  expect(ids.has(firstId)).toBe(true)
+  expect(ids.has(secondId)).toBe(true)
+
+  // Both rows are non-archived (default filter excludes archived).
+  const ours = body.filter((b: { id: number }) => b.id === firstId || b.id === secondId)
+  for (const row of ours) {
+    expect(row.archived_at).toBeNull()
+  }
 })
