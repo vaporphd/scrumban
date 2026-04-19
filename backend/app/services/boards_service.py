@@ -51,8 +51,34 @@ async def create_board(session: AsyncSession, *, creator: User, payload: BoardCr
     return board
 
 
-async def get_board(session: AsyncSession, *, actor: User, board_id: int) -> Board:
-    raise NotImplementedError("get_board lands with the board-detail endpoint issue")
+async def get_board(
+    session: AsyncSession,
+    *,
+    actor: User,
+    board_id: int,
+    include_archived: bool = False,
+) -> Board:
+    """Return board `board_id` with columns + labels eager-loaded.
+
+    Per issue #71: 404 on unknown id; 404 on archived board unless
+    `include_archived=True`. RBAC is Phase 7 — for now any authenticated
+    user can read any board, matching the rest of the Phase 2 endpoints.
+    The `actor` parameter is kept in the signature so the future RBAC
+    filter can land without a router change.
+
+    The single repo call performs three SELECTs (board + columns +
+    labels via `selectinload`) — the N+1 assertion in
+    `tests/test_boards_get.py` locks this.
+    """
+    board = await board_repo.get_by_id_with_relations(session, board_id)
+    if board is None:
+        raise BoardError("board_not_found", f"Board {board_id} not found.")
+    if board.archived_at is not None and not include_archived:
+        # Archived boards are hidden from default reads — same model as
+        # `list_boards`. We use 404 (not 410 / 403) so unauthorized
+        # probers can't tell archived-but-exists from never-existed.
+        raise BoardError("board_not_found", f"Board {board_id} not found.")
+    return board
 
 
 async def list_boards(
