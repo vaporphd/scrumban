@@ -89,3 +89,30 @@ async def create(
     session.add(board)
     await session.flush()
     return board
+
+
+async def apply_updates(session: AsyncSession, board: Board, fields: dict[str, object]) -> Board:
+    """Apply a partial update to an already-loaded `board` row.
+
+    `fields` is the caller's pre-filtered dict of attributes to write
+    (typically `BoardUpdate.model_dump(exclude_unset=True)` — i.e. only
+    fields the client explicitly sent). Empty `fields` is a valid no-op
+    and just returns the same row unchanged.
+
+    Done in-Python (mutate attrs + flush) rather than as a single
+    `update().where(...).values(...)` because:
+      * the service has already loaded the row to enforce 404 + archive
+        policy, so the row is in the identity map either way — issuing
+        a separate UPDATE statement would not save a roundtrip;
+      * `TimestampMixin.updated_at` uses `onupdate=func.now()`, which
+        SQLAlchemy applies on flush of dirty attributes regardless of
+        whether the change came via Core UPDATE or ORM mutation, so both
+        paths leave the same DB state. Mutating attrs keeps the
+        `Board` instance in sync without a re-fetch.
+
+    Caller (the service) owns the surrounding transaction.
+    """
+    for key, value in fields.items():
+        setattr(board, key, value)
+    await session.flush()
+    return board

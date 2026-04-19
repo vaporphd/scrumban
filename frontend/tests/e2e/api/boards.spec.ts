@@ -1,12 +1,13 @@
-// Spec #api-3: /api/boards (issues #69 + #70 + #71) — backend smoke per ADR-0008.
+// Spec #api-3: /api/boards (issues #69 + #70 + #71 + #72) — backend smoke per ADR-0008.
 //
 // Pure HTTP, no browser. Scenarios:
-//   1. POST /api/boards with auth → 201 + BoardRead-shaped body (issue #69).
-//   2. POST /api/boards without auth → 401 (issue #69).
-//   3. GET  /api/boards without auth → 401 (issue #70).
-//   4. GET  /api/boards with auth after creating two boards → both present (issue #70).
-//   5. GET  /api/boards/{id} with auth → 200 + columns/labels empty arrays (issue #71).
-//   6. GET  /api/boards/9999999 → 404 (issue #71).
+//   1. POST  /api/boards with auth → 201 + BoardRead-shaped body (issue #69).
+//   2. POST  /api/boards without auth → 401 (issue #69).
+//   3. GET   /api/boards without auth → 401 (issue #70).
+//   4. GET   /api/boards with auth after creating two boards → both present (issue #70).
+//   5. GET   /api/boards/{id} with auth → 200 + columns/labels empty arrays (issue #71).
+//   6. GET   /api/boards/9999999 → 404 (issue #71).
+//   7. PATCH /api/boards/{id} → 200 with new name; re-GET shows new name (issue #72).
 //
 // The spec mints its own user (register + login) inline. Idempotent
 // across re-runs because the username is suffixed with crypto.randomUUID
@@ -182,6 +183,56 @@ test('GET /api/boards/{id} returns 200 with empty columns and labels for a fresh
   expect(body.columns).toEqual([])
   expect(Array.isArray(body.labels)).toBe(true)
   expect(body.labels).toEqual([])
+})
+
+test('PATCH /api/boards/{id} updates the name and a subsequent GET reflects it', async ({
+  request,
+}) => {
+  // Mint a fresh user and log in.
+  const username = uniq('boards_patch_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Boards PATCH E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  // Create a fresh board.
+  const originalName = uniq('patch-e2e-original')
+  const created = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: originalName, description: 'before patch' },
+  })
+  expect(created.status()).toBe(201)
+  const { id: boardId } = await created.json()
+
+  // PATCH the name (only). Description should stay unchanged.
+  const renamed = uniq('patch-e2e-renamed')
+  const patched = await request.patch(`${API}/boards/${boardId}`, {
+    headers: auth,
+    data: { name: renamed },
+  })
+  expect(patched.status()).toBe(200)
+  const patchedBody = await patched.json()
+  expect(patchedBody.id).toBe(boardId)
+  expect(patchedBody.name).toBe(renamed)
+  // description was not in the PATCH payload — must stay intact.
+  expect(patchedBody.description).toBe('before patch')
+
+  // Re-GET to prove the change is persisted, not just echoed.
+  const refetched = await request.get(`${API}/boards/${boardId}`, { headers: auth })
+  expect(refetched.status()).toBe(200)
+  const refetchedBody = await refetched.json()
+  expect(refetchedBody.id).toBe(boardId)
+  expect(refetchedBody.name).toBe(renamed)
+  expect(refetchedBody.description).toBe('before patch')
 })
 
 test('GET /api/boards/{id} returns 404 for an unknown id', async ({ request }) => {
