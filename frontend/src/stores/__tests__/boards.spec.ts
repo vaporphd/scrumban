@@ -54,4 +54,24 @@ describe('useBoardsStore.list', () => {
     expect(store.loading).toBe(false)
     expect(store.error).toBe('boom')
   })
+
+  it('sets loading=true while the request is in flight', async () => {
+    let resolveFetch!: (response: Response) => void
+    const fetchMock = vi.fn<typeof fetch>().mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    const pending = store.list()
+
+    expect(store.loading).toBe(true)
+
+    resolveFetch(jsonResponse(200, []))
+    await pending
+
+    expect(store.loading).toBe(false)
+  })
 })

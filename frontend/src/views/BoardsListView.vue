@@ -41,7 +41,16 @@ function retry(): void {
 
     <div v-else-if="boards.boards.length === 0" class="state-empty">
       <p>You don't have any boards yet.</p>
-      <button type="button" data-testid="create-first-board-cta">
+      <!-- Disabled until issue #75 wires the create-board modal. The button is
+           rendered (with its data-testid) so the smoke spec's empty-state
+           assertion stays meaningful, but it's a no-op with a tooltip hint
+           rather than a silent live button. -->
+      <button
+        type="button"
+        data-testid="create-first-board-cta"
+        disabled
+        title="Coming soon"
+      >
         Create your first board
       </button>
     </div>
