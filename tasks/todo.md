@@ -160,9 +160,9 @@ scrumban/
 
 **Fine-grained issue queue**: issues #36, #67-#122 split the checkboxes below into 55+ single-PR tasks (backend endpoints split per verb/resource, frontend split per component / interaction, tests split per resource). Lowest-numbered open issue is the next actionable item. Phase 3 realtime in #123-#134.
 
-- [ ] Модели: `Board`, `Column`, `Task`, `Label`, `TaskLabel` (#36)
-- [ ] Миграция
-- [ ] Репо-слой + сервисы (переиспользуемые api+bot)
+- [x] Модели: `Board`, `Column`, `Task`, `Label`, `TaskLabel` (#36)
+- [x] Миграция (#36, `73cb93ca2565`)
+- [x] Репо-слой + сервисы (переиспользуемые api+bot) (#36, read-only repo + NotImplementedError service skeletons)
 - [ ] REST: `/api/boards` (list/create/get/update/archive)
 - [ ] REST: `/api/boards/{id}/columns` (CRUD + reorder)
 - [ ] REST: `/api/boards/{id}/tasks` (list с фильтрами: assignee, label, due, search)

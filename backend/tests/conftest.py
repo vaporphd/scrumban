@@ -31,8 +31,14 @@ from app.main_api import app
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_db() -> AsyncIterator[None]:
     async with engine.begin() as conn:
+        # Order matters only insofar as RESTART IDENTITY CASCADE handles
+        # FK dependencies for us. All Phase-1 + Phase-2 tables in one
+        # TRUNCATE keeps test isolation cheap — one statement per test.
         await conn.execute(
-            text("TRUNCATE TABLE refresh_tokens, tg_link_codes, users RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE TABLE task_labels, tasks, labels, columns, boards, "
+                "refresh_tokens, tg_link_codes, users RESTART IDENTITY CASCADE"
+            )
         )
     yield
 
