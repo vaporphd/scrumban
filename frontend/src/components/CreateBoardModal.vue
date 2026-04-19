@@ -106,7 +106,11 @@ function onCancel(): void {
   >
     <div class="modal-card">
       <h3 id="create-board-title">Create board</h3>
-      <form @submit.prevent="onSubmit">
+      <!-- novalidate: we own the validation UX in JS so the inline error message
+           ("Name is required") is testable and consistent across browsers.
+           The HTML5 `required` attribute on the name input is kept as a semantic
+           marker but native popovers are suppressed. -->
+      <form novalidate @submit.prevent="onSubmit">
         <label>
           Name
           <input
