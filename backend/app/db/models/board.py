@@ -36,9 +36,11 @@ class Board(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # `created_by` per `tasks/todo.md` section 3 — matches the plan's column
-    # name so migration diffs don't surprise the reviewer. Nullable=False:
-    # every board has a creator; if that user is later deleted, SET NULL
-    # lets the board survive without a dangling FK.
+    # name so migration diffs don't surprise the reviewer. Nullable=True is
+    # required by the ON DELETE SET NULL policy: if the creator is later
+    # deleted, the board survives with a NULL creator rather than cascading
+    # away. Boards are always created with a non-null `created_by` by the
+    # service layer; nullability is an after-deletion-only state.
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
