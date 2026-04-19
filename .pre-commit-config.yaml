@@ -60,3 +60,17 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
+
+      # ── Pre-push: refuse direct code pushes to main ──────────────────────
+      # Pure docs-only diffs (docs/, thoughts/, tasks/, *.md at repo root)
+      # are allowed through; anything else must go through a PR. See
+      # scripts/pre-push-main-guard.sh for the full policy rationale and the
+      # `--no-verify` caveat (git skips client hooks entirely on --no-verify;
+      # branch-protection rulesets are the only server-side fix).
+      - id: main-branch-docs-only-guard
+        name: main-branch-docs-only-guard
+        entry: bash scripts/pre-push-main-guard.sh
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

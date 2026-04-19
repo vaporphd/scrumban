@@ -141,6 +141,7 @@ scrumban/
 - [x] Pre-merge loop quick-reference doc at `docs/loop.md` + cross-link from `CLAUDE.md` (#40)
 - [x] Playwright e2e wired into CI as a separate `e2e` job — postgres + redis services, host-side uvicorn + vite, cached chromium, failure artifacts (#26)
 - [x] Pre-push pytest resolves postgres host via localhost by default — `backend/.env.local` override loaded after `.env` by pydantic-settings (#67)
+- [x] Pre-push hook refuses direct pushes to `main` unless diff is pure docs (`docs/`, `thoughts/`, `tasks/`, `*.md` at root) — test harness at `scripts/test-no-verify-guard.sh` (#68)
 
 ### Phase 1 — Auth + users (день 3–4)
 - [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)
