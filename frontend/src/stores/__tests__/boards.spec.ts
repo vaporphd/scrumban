@@ -176,6 +176,137 @@ describe('useBoardsStore.create', () => {
   })
 })
 
+describe('useBoardsStore.getById', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('hydrates currentBoard with the embedded columns and clears loading/error', async () => {
+    // BoardDetailRead shape: BoardRead + columns[] + labels[] (see backend
+    // app/domain/boards.py). We assert array-order is preserved (the backend
+    // already orders by Column.position via the eager-load).
+    const detail = {
+      id: 5,
+      name: 'Detail board',
+      description: null,
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+      columns: [
+        {
+          id: 11,
+          board_id: 5,
+          name: 'Todo',
+          position: 1000,
+          wip_limit: null,
+          created_at: '2026-04-19T10:00:00Z',
+          updated_at: '2026-04-19T10:00:00Z',
+        },
+        {
+          id: 12,
+          board_id: 5,
+          name: 'Done',
+          position: 2000,
+          wip_limit: 5,
+          created_at: '2026-04-19T10:00:00Z',
+          updated_at: '2026-04-19T10:00:00Z',
+        },
+      ],
+      labels: [],
+    }
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(200, detail))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    await store.getById(5)
+
+    expect(store.currentBoard?.id).toBe(5)
+    expect(store.currentBoard?.columns.map((c) => c.id)).toEqual([11, 12])
+    expect(store.currentBoardLoading).toBe(false)
+    expect(store.currentBoardError).toBeNull()
+
+    const [getUrl, getInit] = fetchMock.mock.calls[0] ?? []
+    expect(getUrl).toBe('/api/boards/5')
+    expect((getInit as RequestInit | undefined)?.method ?? 'GET').toBe('GET')
+  })
+
+  it('maps a 404 to the literal "not_found" error so the view can branch on it', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(404, { detail: 'board_not_found' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    await store.getById(999)
+
+    expect(store.currentBoard).toBeNull()
+    expect(store.currentBoardError).toBe('not_found')
+    expect(store.currentBoardLoading).toBe(false)
+  })
+
+  it('captures the server detail on non-404 errors and clears the previous board', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(500, { detail: 'boom' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    // Pre-seed a previous board to confirm getById clears it before the
+    // request fires (no stale paint when navigating between detail pages).
+    store.currentBoard = {
+      id: 99,
+      name: 'previous',
+      description: null,
+      created_by: 1,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+      columns: [],
+      labels: [],
+    }
+
+    await store.getById(7)
+
+    expect(store.currentBoard).toBeNull()
+    expect(store.currentBoardError).toBe('boom')
+  })
+
+  it('sets currentBoardLoading=true while the request is in flight', async () => {
+    let resolveFetch!: (response: Response) => void
+    const fetchMock = vi.fn<typeof fetch>().mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    const pending = store.getById(5)
+
+    expect(store.currentBoardLoading).toBe(true)
+
+    resolveFetch(
+      jsonResponse(200, {
+        id: 5,
+        name: 'X',
+        description: null,
+        created_by: 1,
+        created_at: '2026-04-19T10:00:00Z',
+        updated_at: '2026-04-19T10:00:00Z',
+        archived_at: null,
+        columns: [],
+        labels: [],
+      }),
+    )
+    await pending
+
+    expect(store.currentBoardLoading).toBe(false)
+  })
+})
+
 describe('useBoardsStore.archive', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

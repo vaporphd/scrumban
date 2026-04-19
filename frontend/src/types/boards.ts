@@ -1,9 +1,11 @@
-// Mirrors backend/app/domain/boards.py — BoardRead / BoardCreate. Keep in sync
-// when the pydantic schemas change.
+// Mirrors backend/app/domain/boards.py — BoardRead / BoardCreate / BoardDetailRead.
+// Keep in sync when the pydantic schemas change.
 //
-// The detail shape (BoardDetailRead = BoardRead + columns + labels) is intentionally
-// not modeled yet — the list view (issue #74) only uses the lighter row shape.
-// When the board-detail view lands (issue #76 or #77), add a `BoardDetail` interface here.
+// `Board` is the lightweight row shape used by the boards list view.
+// `BoardDetail` extends `Board` with eager-loaded `columns` and `labels`,
+// returned by `GET /api/boards/{id}` and consumed by the board detail view
+// (issue #81). `Column` and `Label` mirror `ColumnRead` / `LabelRead`
+// respectively (backend/app/domain/columns.py + labels.py).
 
 export interface Board {
   id: number
@@ -13,6 +15,39 @@ export interface Board {
   created_at: string // ISO 8601
   updated_at: string // ISO 8601
   archived_at: string | null
+}
+
+// Mirrors backend `ColumnRead` (app/domain/columns.py). `position` is the
+// integer ordering key — the backend already returns columns sorted by it
+// via `Board.columns` `order_by="Column.position"` (issue #71), so the
+// frontend can render `board.columns` in array order without re-sorting.
+export interface Column {
+  id: number
+  board_id: number
+  name: string
+  position: number
+  wip_limit: number | null
+  created_at: string // ISO 8601
+  updated_at: string // ISO 8601
+}
+
+// Mirrors backend `LabelRead` (app/domain/labels.py). Not consumed by the
+// board detail view yet, but `BoardDetailRead.labels` is part of the payload
+// so we model it for type completeness.
+export interface Label {
+  id: number
+  board_id: number
+  name: string
+  color: string // `#RRGGBB` or `#RGB` per HEX_COLOR_PATTERN
+  created_at: string // ISO 8601
+  updated_at: string // ISO 8601
+}
+
+// Mirrors backend `BoardDetailRead` (app/domain/boards.py): `BoardRead` plus
+// eager-loaded columns (ordered by position) and labels.
+export interface BoardDetail extends Board {
+  columns: Column[]
+  labels: Label[]
 }
 
 // Mirrors backend `BoardCreate` (app/domain/boards.py): name 1-128 chars,
