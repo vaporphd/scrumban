@@ -6,14 +6,21 @@
 //    spinner / error+retry / empty CTA / list without owning the lifecycle.
 //  - Expose a `create()` action that posts a new board and refreshes the list
 //    on success (issue #75).
-//
-// Subsequent issues (#76/#77 detail view) will extend this store with
-// `getById()`, etc. — keep those changes additive.
+//  - Expose a `getById()` action that fetches a single board's detail
+//    (with eager-loaded columns + labels) for the board detail view
+//    (issue #81). State is kept in a separate slot (`currentBoard`,
+//    `currentBoardLoading`, `currentBoardError`) so navigating between
+//    detail and list views does not interleave loading flags.
 
 import { defineStore } from 'pinia'
-import { archiveBoardApi, createBoardApi, listBoardsApi } from '@/api/boards'
+import {
+  archiveBoardApi,
+  createBoardApi,
+  getBoardDetailApi,
+  listBoardsApi,
+} from '@/api/boards'
 import { ApiError } from '@/types/auth'
-import type { Board, BoardCreate } from '@/types/boards'
+import type { Board, BoardCreate, BoardDetail } from '@/types/boards'
 
 interface BoardsState {
   boards: Board[]
@@ -28,6 +35,17 @@ interface BoardsState {
   // can scope the spinner to one row even if a future iteration permits
   // overlapping archives.
   archiving: number | null
+  // Detail view state (issue #81). Kept in its own slot so the detail-load
+  // lifecycle does not collide with the list-load lifecycle — a user landing
+  // on /boards/:id from a deep link shouldn't have a stale list-load error
+  // bleed into their first paint of the detail page.
+  currentBoard: BoardDetail | null
+  currentBoardLoading: boolean
+  // String for normal failures, the literal `'not_found'` for 404 so the
+  // view can render a dedicated "Board not found" branch without parsing
+  // the message. Server `detail` strings vary; the 404 case is the one we
+  // care to special-case in the UI.
+  currentBoardError: string | null
 }
 
 export const useBoardsStore = defineStore('boards', {
@@ -37,6 +55,9 @@ export const useBoardsStore = defineStore('boards', {
     error: null,
     creating: false,
     archiving: null,
+    currentBoard: null,
+    currentBoardLoading: false,
+    currentBoardError: null,
   }),
   actions: {
     async list(): Promise<void> {
@@ -104,6 +125,36 @@ export const useBoardsStore = defineStore('boards', {
         await this.list()
       } finally {
         this.archiving = null
+      }
+    },
+
+    /** Fetch a single board's detail (with embedded columns + labels) and
+     * stash it on `currentBoard`. Drives the board detail view (issue #81).
+     *
+     * Clears `currentBoard` upfront so a navigation between two detail
+     * pages doesn't briefly render the previous board's columns while the
+     * new fetch is in flight. The view should branch on
+     * `currentBoardLoading` first.
+     *
+     * 404 is surfaced as the literal `currentBoardError = 'not_found'` so
+     * the view can render a dedicated "Board not found" branch with a
+     * back-link, instead of a generic error+retry. Other failures land on
+     * `currentBoardError` as the server `detail` string (or the raw
+     * exception message for non-`ApiError` cases). */
+    async getById(id: number): Promise<void> {
+      this.currentBoardLoading = true
+      this.currentBoardError = null
+      this.currentBoard = null
+      try {
+        this.currentBoard = await getBoardDetailApi(id)
+      } catch (e) {
+        if (e instanceof ApiError) {
+          this.currentBoardError = e.status === 404 ? 'not_found' : (e.detail ?? e.message)
+        } else {
+          this.currentBoardError = (e as Error).message ?? 'Failed to load board'
+        }
+      } finally {
+        this.currentBoardLoading = false
       }
     },
   },

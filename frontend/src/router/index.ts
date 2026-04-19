@@ -4,6 +4,7 @@ import LoginView from '@/views/LoginView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import BoardsListView from '@/views/BoardsListView.vue'
+import BoardDetailView from '@/views/BoardDetailView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
@@ -44,6 +45,15 @@ export const router = createRouter({
       path: '/boards',
       name: 'boards',
       component: BoardsListView,
+      meta: { requiresAuth: true },
+    },
+    {
+      // Board detail view (issue #81). The router param is a string; the
+      // view coerces to number and treats non-numeric / non-positive ids as
+      // not-found without burning a server roundtrip.
+      path: '/boards/:id',
+      name: 'board-detail',
+      component: BoardDetailView,
       meta: { requiresAuth: true },
     },
   ],
