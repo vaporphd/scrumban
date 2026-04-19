@@ -3,12 +3,14 @@
 Mounted at `/api` from `app.main_api`. Routes split into two shapes:
 
   * Sub-resource shape `/boards/{board_id}/columns` — used for column
-    *creation*, because you can only add a column *to* a board (the
-    parent must exist; new column has no id yet).
+    *creation* (you can only add a column *to* a board) AND for the
+    *reorder* batch verb `/boards/{board_id}/columns/reorder` (the
+    operation is inherently board-scoped — every id in the body must
+    belong to *this* board, so the URL pins the scope rather than
+    parsing it from the body).
   * Flat shape `/columns/{column_id}` — used for per-column verbs
-    (PATCH, DELETE here, reorder coming with issue #80) because once
-    a column exists its identity is global; the parent board is
-    reachable via the row's `board_id`.
+    (PATCH, DELETE) because once a column exists its identity is
+    global; the parent board is reachable via the row's `board_id`.
 
 Keeping both shapes in this file means the columns surface stays in
 one place.
@@ -24,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import JSONResponse
 
 from app.api.deps import CurrentUser, SessionDep
-from app.domain.columns import ColumnCreate, ColumnRead, ColumnUpdate
+from app.domain.columns import ColumnCreate, ColumnRead, ColumnsReorderRequest, ColumnUpdate
 from app.services import columns_service
 from app.services.boards_service import BoardError
 from app.services.columns_service import ColumnError
@@ -61,6 +63,56 @@ async def create_column(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
         raise
     return ColumnRead.model_validate(column)
+
+
+@router.post(
+    "/boards/{board_id}/columns/reorder",
+    response_model=list[ColumnRead],
+)
+async def reorder_columns(
+    board_id: int,
+    payload: ColumnsReorderRequest,
+    user: CurrentUser,
+    session: SessionDep,
+) -> list[ColumnRead]:
+    """Rewrite all column positions on `board_id` to match the request.
+
+    Per issue #80: 200 with the updated columns in their new order; 400
+    `invalid_reorder` if the request body's `ordered_column_ids` does
+    not match the board's column set exactly (missing / extra /
+    unknown / duplicate ids — see `columns_service.reorder_columns`
+    for the rationale on collapsing those four flavors onto one error
+    code). 404 on unknown board id and on archived boards (same
+    read-only obscurity contract as PATCH/DELETE). 422 on an empty
+    list (pydantic `min_length=1`). 401 (no token / bad token) is
+    handled by the `CurrentUser` dependency.
+
+    Sub-resource shape `/boards/{board_id}/columns/reorder` rather than
+    flat `/columns/reorder` because the operation is inherently
+    board-scoped — every id in the body must belong to the same board,
+    and the validation contract is "matches *this* board's set". The
+    URL makes the scoping explicit without parsing it out of the body.
+    Mirrors the `POST /boards/{board_id}/columns` create-shape from
+    issue #77.
+    """
+    try:
+        columns = await columns_service.reorder_columns(
+            session,
+            actor=user,
+            board_id=board_id,
+            ordered_column_ids=payload.ordered_column_ids,
+        )
+    except BoardError as exc:
+        if exc.code == "board_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+        raise
+    except ColumnError as exc:
+        if exc.code == "invalid_reorder":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_reorder"
+            ) from exc
+        raise
+    return [ColumnRead.model_validate(c) for c in columns]
 
 
 @router.patch(
