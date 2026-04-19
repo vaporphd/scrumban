@@ -97,3 +97,167 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+
+    # Services: same postgres/redis shape as the `backend` job. The api runs as
+    # a background uvicorn process on the runner host (not in compose) so the
+    # stack-lifecycle pattern matches the `smoke-tester` agent's "external stack
+    # owner" model — Playwright's webServer is intentionally unused (see
+    # frontend/playwright.config.ts for the rationale).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scrumban
+          POSTGRES_PASSWORD: scrumban
+          POSTGRES_DB: scrumban
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scrumban"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # Api env vars — same shape as the backend job plus the rest of the
+      # pydantic-settings surface the api touches at startup. TELEGRAM__BOT_TOKEN
+      # is a placeholder; no spec exercises the aiogram bot or real Telegram API
+      # (confirmed via grep across frontend/tests/e2e).
+      DATABASE__URL: postgresql+asyncpg://scrumban:scrumban@localhost:5432/scrumban
+      REDIS__URL: redis://localhost:6379/0
+      JWT__SECRET: ci-test-secret-not-for-prod
+      TELEGRAM__BOT_TOKEN: ci-placeholder-not-used
+      TELEGRAM__BOT_USERNAME: scrumban_ci_bot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Alembic migrations (upgrade head)
+        working-directory: backend
+        run: alembic upgrade head
+
+      # Playwright browser binaries live at ~/.cache/ms-playwright and are
+      # keyed on the pinned @playwright/test version (frontend/package.json
+      # pins 1.59.1). Bump the key when the package version bumps so stale
+      # browsers don't linger. System deps from `--with-deps` are apt packages
+      # and aren't worth caching — they install quickly and vary by runner.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-1.59.1
+
+      - name: Install Playwright chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Start api (uvicorn, background)
+        working-directory: backend
+        run: |
+          nohup uvicorn app.main_api:app --host 127.0.0.1 --port 8000 \
+            > "$GITHUB_WORKSPACE/uvicorn.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/uvicorn.pid"
+
+      - name: Wait for api /api/health
+        run: |
+          # 30 attempts x 1s = 30s ceiling; uvicorn + asyncpg typically respond
+          # in <5s once alembic is done. --retry-connrefused handles the brief
+          # window before the listener binds.
+          curl --fail --silent --show-error \
+            --retry 30 --retry-delay 1 --retry-connrefused \
+            http://127.0.0.1:8000/api/health
+
+      - name: Start vite dev server (background)
+        working-directory: frontend
+        run: |
+          # Vite reads VITE_API_PROXY_TARGET from process.env (see vite.config.ts,
+          # issue 25); the default http://localhost:8000 matches where uvicorn
+          # is bound above, so no explicit env var needed here.
+          nohup npm run dev -- --host 127.0.0.1 --port 5173 \
+            > "$GITHUB_WORKSPACE/vite.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/vite.pid"
+
+      - name: Wait for vite dev server
+        run: |
+          curl --fail --silent --show-error \
+            --retry 30 --retry-delay 1 --retry-connrefused \
+            --output /dev/null \
+            http://127.0.0.1:5173
+
+      - name: Playwright e2e
+        working-directory: frontend
+        run: npm run e2e
+
+      - name: Upload Playwright HTML report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Playwright artifacts (traces, videos, screenshots)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: frontend/tests/e2e/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload server logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            uvicorn.log
+            vite.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stop background servers
+        if: always()
+        run: |
+          for pidfile in "$GITHUB_WORKSPACE/uvicorn.pid" "$GITHUB_WORKSPACE/vite.pid"; do
+            [ -f "$pidfile" ] || continue
+            pid=$(cat "$pidfile")
+            kill "$pid" 2>/dev/null || true
+          done
