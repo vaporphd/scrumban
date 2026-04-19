@@ -84,7 +84,7 @@ test('GET /api/boards without auth returns 401', async ({ request }) => {
   expect(response.headers()['www-authenticate']).toBe('Bearer')
 })
 
-test('GET /api/boards returns boards created by the authenticated user', async ({
+test('GET /api/boards returns at least the boards just inserted (containment)', async ({
   request,
 }) => {
   // Mint a fresh user and log in.
