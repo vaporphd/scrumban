@@ -29,6 +29,19 @@ User input per PR in the normal flow: 1 word (the issue number / "go"). Down fro
 - **auto-merge**: `gh pr merge N --auto --squash --delete-branch`. GitHub waits for CI green and merges. Issue auto-closes via `Closes #N` in PR body.
 - **/loop mode**: main session auto-picks the lowest-numbered open issue instead of waiting for `do #N`. See `CLAUDE.md` → "Automated /loop mode — issue pickup".
 
+## Trigger phrases
+
+The main session recognizes these as loop invocations without an explicit `/loop` slash command:
+
+| You say                                    | Loop does                                         |
+|--------------------------------------------|---------------------------------------------------|
+| `do next task` / `take the next one`       | 1 PR end-to-end, then stop                        |
+| `do next N tasks` / `take next 5`          | N PRs, N counts merged (not attempted)            |
+| `do all next tasks` / `drain the queue`    | unbounded, stop only on queue-drain / blocker / interrupt |
+| `/loop` (slash skill)                      | unbounded dynamic mode, self-pacing across wakeups |
+
+Progress contract during a multi-PR run: one-line confirmation at start, one-line update between merges, explicit stop message with reason. No narration. See `CLAUDE.md` → "Trigger phrases" for canonical rules and edge cases.
+
 ## Exception paths
 
 - **Pre-existing smoke fail** (not caused by this PR's diff): implementer escalates to `bug-hunter`; this PR pauses pending the pre-existing fix landing separately.

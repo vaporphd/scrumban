@@ -276,7 +276,7 @@ The loop terminates only at step 5 (auto-merge executes) or when an agent report
 
 ### Automated /loop mode — issue pickup
 
-When the user starts a `/loop` session (or simply says "run the loop"), the main session auto-picks the next issue rather than waiting for a `do #N` instruction. Pickup rules:
+When the user starts a `/loop` session (or uses one of the trigger phrases below), the main session auto-picks the next issue rather than waiting for a `do #N` instruction. Pickup rules:
 
 1. **Default policy — lowest-numbered open issue, dependency-ordered**. Run:
    ```sh
@@ -299,3 +299,28 @@ When the user starts a `/loop` session (or simply says "run the loop"), the main
    - Token budget approached (if /loop dynamic mode signals) → finish current PR, then pause.
 
 6. **Cross-iteration invariant**: the main session does not hold state across `/loop` wakeups — everything must be rederivable from `gh issue list`, `gh pr list`, `followup.md`, and the agent files on disk. Do not rely on "I remember we were working on #69" — re-derive.
+
+### Trigger phrases — recognize in user messages
+
+The main session treats the following natural-language phrases as loop invocations without waiting for an explicit `/loop` slash command. **Match case-insensitive, tolerant of minor rewording** (e.g. "next", "the next", "a batch of", "a few" all count). Whenever the user is asking the session to run the agent loop autonomously on the queue, this section applies.
+
+| Phrase pattern                                      | Iterations (N)                                    |
+|-----------------------------------------------------|---------------------------------------------------|
+| `take next task` / `do next task` / `run next task` / `do the next one` | 1 (single PR, then pause)                         |
+| `take next N tasks` / `do next N tasks` / `run next N` / `do N more` | N (where N is the integer in the message)        |
+| `do all next tasks` / `take all` / `run all open` / `drain the queue` / `keep going until done` | unbounded (until queue drained, blocker, or user interrupt) |
+| `/loop` (slash skill) / `run the loop` / `start the loop` | unbounded dynamic mode — use the `/loop` skill and let it self-pace across session wakeups |
+
+**Reporting contract during a multi-PR loop**:
+
+- Before starting, confirm the plan in one line: `Picking up N tasks starting from issue #X. First: <title>.`
+- Between merges, emit a single-line progress update: `Merged K/N (#Y closed). Next: #Z <title>.` No narration.
+- On blocker: `Merged K/N. Stopping on issue #Y: <blocker summary>. User action needed.` Then stop — do not continue to issue #Y+1 on the assumption the blocker will resolve itself.
+- On queue drained before N reached: `Merged K of requested N (queue drained at #last-issue). No more open issues matching the queue criteria.` Stop.
+- On user interrupt: finish the currently-in-flight PR to the next safe checkpoint (auto-merge or review-loop boundary), then stop with a status summary.
+
+**Counting invariant**: N counts **merged PRs**, not attempted PRs. A PR that gets blocked mid-loop does not decrement the counter; the loop resumes where it stopped when the blocker is cleared.
+
+**Authorization scope for unbounded mode**: `do all next tasks` inherits the same auto-merge authorization from ADR-0007 — the session can run arbitrarily many autonomous PRs through the implementer → smoke-tester → reviewer → auto-merge chain without per-PR user input, until one of the stop conditions above fires. The safety gates (CI green, smoke green, reviewer zero findings) remain per-PR; the unbounded count just removes the outer "should I start the next one?" question.
+
+**Ambiguous phrasing**: if the number is unclear ("do a few", "take a couple"), ask once. Do not guess `3` silently. Similarly, if the phrase could plausibly mean "just tell me about the next tasks" (informational) rather than "execute them" (loop), ask. The agent loop is destructive (PRs merged to `main`) — explicit invocation matters.
