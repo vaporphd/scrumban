@@ -101,7 +101,54 @@ async def list_boards(
 async def update_board(
     session: AsyncSession, *, actor: User, board_id: int, payload: BoardUpdate
 ) -> Board:
-    raise NotImplementedError("update_board lands with the board-update endpoint issue")
+    """Apply a partial update (`name` and/or `description`) to board `board_id`.
+
+    Per issue #72: 404 on unknown id; 404 on archived board (same model
+    as `get_board` — archived boards are read-only by default and updates
+    on them are indistinguishable from "doesn't exist" so probers can't
+    detect archived state). Field-level invariants (`name` 1-128,
+    `description` ≤ 4096) are enforced by pydantic on `BoardUpdate`.
+
+    Uses `model_dump(exclude_unset=True)` rather than `exclude_none`:
+    a client that explicitly sends `description: null` is asking to
+    clear the description, which is different from omitting the field
+    (= leave it alone). `exclude_none` would conflate the two and
+    silently turn a clear-request into a no-op.
+
+    Empty payload (no fields sent) is a valid no-op — same row returned
+    unchanged. The pydantic schema does not enforce "at least one field
+    must be present" because there's no harm in returning the current
+    state on `PATCH {}`.
+
+    RBAC is Phase 7 — for now any authenticated user can update any
+    board, matching the rest of the Phase 2 endpoints. The `actor`
+    parameter is kept in the signature so the future RBAC filter can
+    land without a router change.
+
+    TODO(ws): publish `board.updated` on the `board:{id}` Redis channel
+    once the realtime layer lands (Phase 3, issues 123-134). Same
+    deferred-publish stance as `create_board` — see that docstring.
+    """
+    board = await board_repo.get_by_id(session, board_id)
+    if board is None:
+        raise BoardError("board_not_found", f"Board {board_id} not found.")
+    if board.archived_at is not None:
+        # Archived boards are read-only by default — same 404-not-403
+        # model as `get_board` so probers can't tell archived-but-exists
+        # from never-existed.
+        raise BoardError("board_not_found", f"Board {board_id} not found.")
+
+    fields = payload.model_dump(exclude_unset=True)
+    if fields:
+        await board_repo.apply_updates(session, board, fields)
+        # `updated_at` has `onupdate=func.now()` (TimestampMixin) — the DB
+        # computes the new value, so SQLAlchemy expires the attribute on
+        # flush. Without an explicit refresh, the router's
+        # `BoardRead.model_validate(board)` would trigger a lazy-load
+        # outside the async context → `MissingGreenlet`.
+        await session.refresh(board, ["updated_at"])
+    await session.commit()
+    return board
 
 
 async def archive_board(session: AsyncSession, *, actor: User, board_id: int) -> Board:

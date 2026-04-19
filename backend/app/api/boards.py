@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser, SessionDep
-from app.domain.boards import BoardCreate, BoardDetailRead, BoardRead
+from app.domain.boards import BoardCreate, BoardDetailRead, BoardRead, BoardUpdate
 from app.services import boards_service
 from app.services.boards_service import BoardError
 
@@ -86,3 +86,34 @@ async def get_board(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
         raise
     return BoardDetailRead.model_validate(board)
+
+
+@router.patch(
+    "/{board_id}",
+    response_model=BoardRead,
+)
+async def update_board(
+    board_id: int,
+    payload: BoardUpdate,
+    user: CurrentUser,
+    session: SessionDep,
+) -> BoardRead:
+    """Partially update `name` and/or `description` on board `board_id`.
+
+    Returns the updated `BoardRead`. 404 on unknown id and on archived
+    boards (archived = read-only — see `boards_service.update_board`).
+    422 on invalid `name` (empty / >128) or `description` (>4096) is
+    handled by FastAPI from the pydantic schema. 401 (no token / bad
+    token) is handled by the `CurrentUser` dependency. Empty `{}` body
+    is a valid no-op and returns the current row unchanged — see the
+    service docstring for the rationale.
+    """
+    try:
+        board = await boards_service.update_board(
+            session, actor=user, board_id=board_id, payload=payload
+        )
+    except BoardError as exc:
+        if exc.code == "board_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+        raise
+    return BoardRead.model_validate(board)
