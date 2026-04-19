@@ -4,6 +4,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.columns import ColumnRead
+from app.domain.labels import LabelRead
+
 
 class BoardCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
@@ -27,3 +30,20 @@ class BoardRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None
+
+
+class BoardDetailRead(BoardRead):
+    """Board + eager-loaded columns (ordered by position) + labels.
+
+    Returned by `GET /api/boards/{id}` (issue #71). The list endpoint
+    (`GET /api/boards`) intentionally stays on the lighter `BoardRead`
+    shape — embedding columns + labels in every list row would be a
+    payload regression for the common UI case (sidebar + board picker).
+    Detail view is the right place to hydrate.
+
+    `columns` is sorted by `Column.position` via the relationship's
+    `order_by` clause on the model — see `app/db/models/board.py`.
+    """
+
+    columns: list[ColumnRead]
+    labels: list[LabelRead]

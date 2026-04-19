@@ -2,12 +2,39 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.models.board import Board
 
 
 async def get_by_id(session: AsyncSession, board_id: int) -> Board | None:
     return await session.get(Board, board_id)
+
+
+async def get_by_id_with_relations(session: AsyncSession, board_id: int) -> Board | None:
+    """Return the board + eager-loaded columns + labels in 3 SELECTs total.
+
+    Used by `GET /api/boards/{id}` (issue #71) to avoid N+1 when the
+    detail endpoint serializes the columns and labels collections.
+
+    `selectinload` issues one extra SELECT per relationship (board → 1
+    columns SELECT, board → 1 labels SELECT) — three queries total
+    regardless of how many columns/labels exist. We deliberately avoid
+    `joinedload` here because the cartesian product of columns x labels
+    would re-emit board / column rows once per label, blowing up payload
+    transfer for boards with many of each.
+
+    `Column.position` ordering for the columns list comes from the
+    relationship's `order_by="Column.position"` declared on the model
+    (`app/db/models/board.py`); no extra `order_by` needed here.
+    """
+    stmt = (
+        select(Board)
+        .where(Board.id == board_id)
+        .options(selectinload(Board.columns), selectinload(Board.labels))
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def list_active(session: AsyncSession) -> list[Board]:

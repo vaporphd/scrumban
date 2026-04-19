@@ -1,10 +1,12 @@
-// Spec #api-3: /api/boards (issues #69 + #70) — backend smoke per ADR-0008.
+// Spec #api-3: /api/boards (issues #69 + #70 + #71) — backend smoke per ADR-0008.
 //
 // Pure HTTP, no browser. Scenarios:
 //   1. POST /api/boards with auth → 201 + BoardRead-shaped body (issue #69).
 //   2. POST /api/boards without auth → 401 (issue #69).
 //   3. GET  /api/boards without auth → 401 (issue #70).
 //   4. GET  /api/boards with auth after creating two boards → both present (issue #70).
+//   5. GET  /api/boards/{id} with auth → 200 + columns/labels empty arrays (issue #71).
+//   6. GET  /api/boards/9999999 → 404 (issue #71).
 //
 // The spec mints its own user (register + login) inline. Idempotent
 // across re-runs because the username is suffixed with crypto.randomUUID
@@ -135,4 +137,75 @@ test('GET /api/boards returns at least the boards just inserted (containment)', 
   for (const row of ours) {
     expect(row.archived_at).toBeNull()
   }
+})
+
+test('GET /api/boards/{id} returns 200 with empty columns and labels for a fresh board', async ({
+  request,
+}) => {
+  // Mint a fresh user and log in.
+  const username = uniq('boards_get_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Boards Get E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  // Create a fresh board (no columns, no labels added).
+  const boardName = uniq('detail-e2e')
+  const created = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: boardName, description: 'detail check' },
+  })
+  expect(created.status()).toBe(201)
+  const { id: boardId } = await created.json()
+
+  // GET the detail endpoint.
+  const detail = await request.get(`${API}/boards/${boardId}`, { headers: auth })
+  expect(detail.status()).toBe(200)
+  const body = await detail.json()
+
+  // BoardDetailRead shape (BoardRead + columns + labels). Both arrays
+  // empty since we haven't seeded any columns / labels.
+  expect(body.id).toBe(boardId)
+  expect(body.name).toBe(boardName)
+  expect(body.description).toBe('detail check')
+  expect(body.archived_at).toBeNull()
+  expect(Array.isArray(body.columns)).toBe(true)
+  expect(body.columns).toEqual([])
+  expect(Array.isArray(body.labels)).toBe(true)
+  expect(body.labels).toEqual([])
+})
+
+test('GET /api/boards/{id} returns 404 for an unknown id', async ({ request }) => {
+  // Mint a fresh user and log in — the endpoint requires auth before
+  // it can even decide on 404, so we need a valid token to trigger the
+  // not-found path (an unauthenticated request would 401 first).
+  const username = uniq('boards_get_404_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Boards 404 E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+
+  // Use an int id that is unlikely to exist (we keep ids growing across
+  // test runs; 9_999_999 is well above what these tests insert).
+  const response = await request.get(`${API}/boards/9999999`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  expect(response.status()).toBe(404)
 })
