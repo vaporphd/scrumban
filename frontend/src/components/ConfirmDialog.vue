@@ -38,7 +38,11 @@
 
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
-withDefaults(
+// Bound (not destructured): the `<script setup>` template uses `busy`/`title`
+// directly as auto-unwrapped names, AND `onKeydown` reads `props.busy`
+// reactively to honor the busy-while-mutating gate. Capturing the proxy is
+// the cheapest way to satisfy both consumers.
+const props = withDefaults(
   defineProps<{
     title: string
     body?: string
@@ -88,6 +92,18 @@ function focusableElements(): HTMLElement[] {
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
+    // Honor the `busy` contract: while the parent's mutation is in flight,
+    // ESC must NOT cancel — same gate as the buttons (`:disabled="busy"`)
+    // and the backdrop (`@click.self="busy ? null : onBackdropClick()"`).
+    // Without this guard the docstring's promise of "both buttons + ESC +
+    // backdrop are disabled" leaked: ESC would still fire `cancel` mid-POST,
+    // closing the dialog and leaving the user uncertain whether the mutation
+    // committed. preventDefault() so a stray ESC doesn't bubble to other
+    // handlers either.
+    if (props.busy) {
+      event.preventDefault()
+      return
+    }
     event.preventDefault()
     emit('cancel')
     return
@@ -117,6 +133,14 @@ function onKeydown(event: KeyboardEvent): void {
 
 onMounted(() => {
   previouslyFocused = (document.activeElement as HTMLElement | null) ?? null
+  // TODO: scope to modalRoot.value if nested modals ship — today only one
+  // modal is ever open at a time (boards-list owns either CreateBoardModal
+  // OR ConfirmDialog, never both), so a window-level keydown listener is
+  // safe. If a deeper-nested confirm flow lands (e.g. "Discard unsaved
+  // changes?" over the create-board modal), both dialogs' listeners will
+  // fire on a single ESC and double-cancel; switch to a focusable
+  // modalRoot (`tabindex="-1"`) + scoped listener at that point. Same
+  // pattern lives in CreateBoardModal.vue and would need the same fix.
   window.addEventListener('keydown', onKeydown)
   // Focus the confirm button by default. For destructive operations a stricter
   // pattern is to focus Cancel; we don't differentiate here because the dialog

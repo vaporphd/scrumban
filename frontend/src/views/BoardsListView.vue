@@ -71,10 +71,17 @@ async function confirmArchive(): Promise<void> {
   try {
     await boards.archive(target.id)
     confirmingArchive.value = null
-  } catch {
-    // Error is already on `boards.error`; the list view will surface it via
-    // its existing error slot on next render. We close the dialog so the user
-    // can read the inline error rather than a stale modal hovering on top.
+  } catch (e) {
+    // Per the boards store docstring on `archive`: failures are NOT promoted
+    // to `boards.error` (that would replace the whole list with the error
+    // slot for what is at most a one-row problem). We close the dialog so
+    // the page returns to a normal interactive state and log the failure
+    // for now — a proper toast/notification surface is a deferred follow-up
+    // (will be filed alongside the next flow that needs it). The list is
+    // still authoritative: a stale 404 just means the row was already
+    // archived elsewhere; the next refresh will reconcile.
+    // eslint-disable-next-line no-console
+    console.warn('[boards] archive failed for board', target.id, e)
     confirmingArchive.value = null
   }
 }

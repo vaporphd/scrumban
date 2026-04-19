@@ -339,3 +339,102 @@ test('archive board: ESC on confirm dialog cancels (no archive POST fires)', asy
   await expect(page.getByText('StaysHere')).toBeVisible()
   expect(archiveCalls).toBe(0)
 })
+
+test('archive board: ESC is ignored while the archive POST is in flight (busy-guard)', async ({
+  page,
+}) => {
+  // Reviewer finding on PR #146: ConfirmDialog.vue documented that `busy`
+  // disables "both buttons + ESC + backdrop", but the Escape branch in
+  // onKeydown emitted `cancel` unconditionally. Now gated on `props.busy`.
+  // This spec pins the new behavior: while archive is in flight the dialog
+  // stays open, the row stays, and a stray ESC does not close the dialog.
+  // We deliberately hold the POST open until after pressing ESC, then
+  // resolve it and assert the dialog closes naturally on success.
+  const username = randomUsername('boards_archive_busy_esc')
+  const displayName = `Boards Archive Busy ESC ${username}`
+  const password = 'correct-horse-staple'
+
+  await registerViaUi(page, { username, displayName, password })
+
+  // Mutable "DB" so the post-archive refresh GET reflects the archived row
+  // disappearing. Same pattern as the happy-path archive scenario above.
+  type MockBoard = {
+    id: number
+    name: string
+    description: string | null
+    created_by: number
+    created_at: string
+    updated_at: string
+    archived_at: string | null
+  }
+  const allBoards: MockBoard[] = [
+    {
+      id: 9,
+      name: 'BusyBoard',
+      description: null,
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+    },
+  ]
+
+  await page.route(BOARDS_ROUTE, async (route: Route) => {
+    if (route.request().method() === 'GET') {
+      const visible = allBoards.filter((b) => b.archived_at === null)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(visible),
+      })
+      return
+    }
+    await route.continue()
+  })
+
+  // Hold the archive POST open via a deferred promise so we have a window
+  // in which `busy === true` and can press ESC to assert the gate fires.
+  // The test itself resolves the promise once the assertion is complete.
+  let resolvePost!: () => void
+  const postHeld = new Promise<void>((resolve) => {
+    resolvePost = resolve
+  })
+
+  await page.route(BOARDS_ARCHIVE_ROUTE, async (route: Route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    await postHeld
+    const target = allBoards.find((b) => b.id === 9)!
+    target.archived_at = '2026-04-19T11:00:00Z'
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(target),
+    })
+  })
+
+  await page.goto('/boards')
+
+  await page.getByTestId('board-row-archive-9').click()
+  const dialog = page.getByTestId('archive-board-confirm')
+  await expect(dialog).toBeVisible()
+
+  // Click confirm — POST is held open by `postHeld`, so the dialog enters
+  // the busy state and the confirm button shows "Working…".
+  await page.getByTestId('archive-board-confirm-confirm').click()
+  const confirmBtn = page.getByTestId('archive-board-confirm-confirm')
+  await expect(confirmBtn).toHaveText(/Working/)
+  await expect(confirmBtn).toBeDisabled()
+
+  // ESC must NOT close the dialog while busy.
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+
+  // Now release the POST. The list refresh fires (which our handler
+  // returns []), the row disappears, and the dialog closes.
+  resolvePost()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('BusyBoard')).toBeHidden()
+})

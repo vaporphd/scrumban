@@ -87,23 +87,21 @@ export const useBoardsStore = defineStore('boards', {
      * if the user races two archives or a peer archives concurrently, the
      * refetch reconciles state without bookkeeping here.
      *
-     * Errors propagate to the caller so the view can show an inline message
-     * (mirrors `create()`'s rejection contract). The `archiving` flag is
-     * cleared in the `finally` block either way; `error` is set on failure
-     * so the list view can surface it via the existing `state-error` slot. */
+     * Error handling: failures rethrow so the caller can react (e.g. log,
+     * surface a future toast). We deliberately do NOT set `this.error` here
+     * — that field is reserved for list-load failures, which trigger the
+     * full-page `state-error` slot. Setting it on archive failure replaced
+     * the entire boards list with an error screen for what is at most a
+     * single-row problem (e.g. 404 on a stale board), which was a measurably
+     * jarring UX. The list stays intact; the caller decides how to surface
+     * the error. A proper toast/notification system is a deferred follow-up
+     * (no issue filed yet — file alongside the next flow that needs it,
+     * likely #79's column-delete error UX). */
     async archive(id: number): Promise<void> {
       this.archiving = id
-      this.error = null
       try {
         await archiveBoardApi(id)
         await this.list()
-      } catch (e) {
-        if (e instanceof ApiError) {
-          this.error = e.detail ?? e.message
-        } else {
-          this.error = (e as Error).message ?? 'Failed to archive board'
-        }
-        throw e
       } finally {
         this.archiving = null
       }

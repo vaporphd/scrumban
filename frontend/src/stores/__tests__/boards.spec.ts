@@ -246,20 +246,43 @@ describe('useBoardsStore.archive', () => {
     expect(store.archiving).toBeNull()
   })
 
-  it('rethrows on failure, clears archiving, captures detail in error, and skips refresh', async () => {
+  it('rethrows on failure, clears archiving, leaves list-error untouched, and skips refresh', async () => {
+    // Per the archive docstring: list-load `error` is reserved for the
+    // full-page `state-error` slot, NOT for per-row mutation failures.
+    // Setting it on archive failure replaced the whole list with the error
+    // screen, which was jarring UX. Caller catches and decides how to
+    // surface — see BoardsListView.confirmArchive.
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(404, { detail: 'board_not_found' }))
     vi.stubGlobal('fetch', fetchMock)
 
     const store = useBoardsStore()
+    // Pre-seed boards + a previous list error to prove neither is mutated by
+    // the archive failure path. (Realistically `error` would be cleared by
+    // the next list-load; this assertion just pins the contract: archive
+    // does not touch list-load state.)
+    store.boards = [
+      {
+        id: 1,
+        name: 'Untouched',
+        description: null,
+        created_by: 1,
+        created_at: '2026-04-19T10:00:00Z',
+        updated_at: '2026-04-19T10:00:00Z',
+        archived_at: null,
+      },
+    ]
+    store.error = 'previous list error'
 
     await expect(store.archive(999)).rejects.toMatchObject({
       status: 404,
       detail: 'board_not_found',
     })
     expect(store.archiving).toBeNull()
-    expect(store.error).toBe('board_not_found')
+    // List-error untouched; the seeded boards array untouched.
+    expect(store.error).toBe('previous list error')
+    expect(store.boards).toHaveLength(1)
     // No refresh fires when archive POST fails.
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
