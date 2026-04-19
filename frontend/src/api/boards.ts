@@ -3,7 +3,7 @@
 // Mirrors the auth.ts pattern: thin pass-through over the shared http() client
 // so JWT-bearer + 401-refresh handling is centralized in client.ts.
 
-import type { Board, BoardCreate, BoardDetail } from '@/types/boards'
+import type { Board, BoardCreate, BoardDetail, Column, ColumnCreate } from '@/types/boards'
 import { http } from './client'
 
 export function listBoardsApi(): Promise<Board[]> {
@@ -31,4 +31,16 @@ export function archiveBoardApi(id: number): Promise<Board> {
 // already sorted — render in array order without re-sorting client-side.
 export function getBoardDetailApi(id: number): Promise<BoardDetail> {
   return http<BoardDetail>(`/api/boards/${id}`)
+}
+
+// POST /api/boards/{boardId}/columns — create a column on a board (issue #82).
+// Backend assigns `position` automatically as `MAX(position) + 1000` (PR #147),
+// so the new column always lands at the end of the strip — the caller can
+// simply append the returned `ColumnRead` to the locally-cached
+// `currentBoard.columns` array without re-fetching.
+export function createColumnApi(boardId: number, payload: ColumnCreate): Promise<Column> {
+  return http<Column>(`/api/boards/${boardId}/columns`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }

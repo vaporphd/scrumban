@@ -307,6 +307,185 @@ describe('useBoardsStore.getById', () => {
   })
 })
 
+describe('useBoardsStore.createColumn', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs to the nested column endpoint, appends to currentBoard.columns, returns the created column', async () => {
+    const created = {
+      id: 99,
+      board_id: 5,
+      name: 'In Progress',
+      position: 3000,
+      wip_limit: null,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+    }
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(201, created))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    // Pre-seed currentBoard with the same id we'll create against — exercises
+    // the local-append branch (not the guard-skip branch).
+    store.currentBoard = {
+      id: 5,
+      name: 'Board',
+      description: null,
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+      columns: [
+        {
+          id: 11,
+          board_id: 5,
+          name: 'Todo',
+          position: 1000,
+          wip_limit: null,
+          created_at: '2026-04-19T10:00:00Z',
+          updated_at: '2026-04-19T10:00:00Z',
+        },
+      ],
+      labels: [],
+    }
+
+    const result = await store.createColumn(5, { name: 'In Progress' })
+
+    expect(result).toEqual(created)
+    expect(store.currentBoard?.columns.map((c) => c.id)).toEqual([11, 99])
+    expect(store.creatingColumn).toBe(false)
+
+    const [postUrl, postInit] = fetchMock.mock.calls[0] ?? []
+    expect(postUrl).toBe('/api/boards/5/columns')
+    expect((postInit as RequestInit | undefined)?.method).toBe('POST')
+    expect((postInit as RequestInit | undefined)?.body).toBe(
+      JSON.stringify({ name: 'In Progress' }),
+    )
+  })
+
+  it('skips the local append when currentBoard.id does not match boardId (cross-board guard)', async () => {
+    // Defends against a fast user-navigation: an in-flight createColumn on
+    // board A must not splice A's new column into board B's strip if the user
+    // navigated to /boards/B before the POST resolved.
+    const created = {
+      id: 99,
+      board_id: 5,
+      name: 'Stray',
+      position: 1000,
+      wip_limit: null,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+    }
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(201, created))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    store.currentBoard = {
+      id: 999, // different from the boardId passed below
+      name: 'Other Board',
+      description: null,
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+      columns: [],
+      labels: [],
+    }
+
+    await store.createColumn(5, { name: 'Stray' })
+
+    // Cross-board guard: currentBoard.columns must NOT have been mutated.
+    expect(store.currentBoard?.columns).toEqual([])
+    expect(store.creatingColumn).toBe(false)
+  })
+
+  it('rethrows on failure, clears creatingColumn, and leaves currentBoard.columns untouched', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(422, { detail: 'name already exists' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    store.currentBoard = {
+      id: 5,
+      name: 'Board',
+      description: null,
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+      columns: [
+        {
+          id: 11,
+          board_id: 5,
+          name: 'Todo',
+          position: 1000,
+          wip_limit: null,
+          created_at: '2026-04-19T10:00:00Z',
+          updated_at: '2026-04-19T10:00:00Z',
+        },
+      ],
+      labels: [],
+    }
+
+    await expect(store.createColumn(5, { name: 'dup' })).rejects.toMatchObject({
+      status: 422,
+      detail: 'name already exists',
+    })
+    expect(store.currentBoard?.columns.map((c) => c.id)).toEqual([11])
+    expect(store.creatingColumn).toBe(false)
+  })
+
+  it('sets creatingColumn=true while the POST is in flight', async () => {
+    let resolvePost!: (response: Response) => void
+    const fetchMock = vi.fn<typeof fetch>().mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolvePost = resolve
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    store.currentBoard = {
+      id: 5,
+      name: 'Board',
+      description: null,
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+      columns: [],
+      labels: [],
+    }
+
+    const pending = store.createColumn(5, { name: 'Todo' })
+
+    expect(store.creatingColumn).toBe(true)
+
+    resolvePost(
+      jsonResponse(201, {
+        id: 99,
+        board_id: 5,
+        name: 'Todo',
+        position: 1000,
+        wip_limit: null,
+        created_at: '2026-04-19T10:00:00Z',
+        updated_at: '2026-04-19T10:00:00Z',
+      }),
+    )
+    await pending
+
+    expect(store.creatingColumn).toBe(false)
+  })
+})
+
 describe('useBoardsStore.archive', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

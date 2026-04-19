@@ -99,17 +99,128 @@ test('register → seed board with 2 columns → /boards/:id renders both column
   // Order check: the issue spec calls for the columns to render in
   // position order (col1 was created first → position 1000; col2 second
   // → position 2000). We assert via the rendered DOM order. Reading
-  // `data-testid` off `.column-strip > li` and comparing to the expected
-  // sequence is unambiguous and survives any future style change to the
-  // strip's flex direction or padding.
+  // `data-testid` off `.column-strip > li[data-testid^="board-detail-column-"]`
+  // and comparing to the expected sequence is unambiguous and survives any
+  // future style change to the strip's flex direction or padding.
+  //
+  // The `data-testid^=` filter is load-bearing: as of issue #82 the strip
+  // also contains a trailing `<li data-testid="board-detail-add-column-host">`
+  // for the strip-end "+ Add column" trigger. A naive `> li` selector picks
+  // that up too and breaks this assertion's exact-equality check.
   const renderedIds = await page
     .getByTestId('board-detail-columns')
-    .locator('> li')
+    .locator('> li[data-testid^="board-detail-column-"]')
     .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')))
   expect(renderedIds).toEqual([
     `board-detail-column-${col1Id}`,
     `board-detail-column-${col2Id}`,
   ])
+})
+
+test('add-column flow: empty board → trigger → type name → Enter → new column visible', async ({
+  page,
+}) => {
+  // Mandatory smoke for issue #82 (add-column button + flow). Asserts the
+  // full create-column path:
+  //   register → POST board (no columns) → navigate to /boards/:id →
+  //   empty-state CTA renders → click CTA → form transitions in → type name
+  //   → press Enter → backend creates column → strip renders the new column.
+  //
+  // No mocking — the column endpoints landed in PR #145/#146/#148/#149/#147,
+  // and the real backend POST is the contract under test (frontend types
+  // mirror backend `ColumnRead` exactly; a drift would surface here as an
+  // unexpected 4xx or a missing `id` in the response).
+  //
+  // Same hybrid setup pattern as the rest of this spec: register via the UI
+  // (so the auth-store rehydrates and tokens land in localStorage), then
+  // seed the board over `page.context().request` so the spec stays focused
+  // on the rendering / form behavior under test.
+  const username = randomUsername('add_column')
+  const displayName = `Add Column Spec ${username}`
+  const password = 'correct-horse-staple'
+
+  await registerViaUi(page, { username, displayName, password })
+
+  const accessToken = await page.evaluate(() => localStorage.getItem('access_token'))
+  expect(accessToken, 'register helper should have populated access_token').not.toBeNull()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  const boardName = `AddColumn ${username}`
+  const createdBoard = await page.context().request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: boardName, description: 'host board for add-column smoke' },
+  })
+  expect(createdBoard.status()).toBe(201)
+  const { id: boardId } = await createdBoard.json()
+
+  await page.goto(`/boards/${boardId}`)
+
+  // Empty-columns branch: the dedicated CTA (board-detail-add-first-column)
+  // is the entry point. Trigger card at strip end is NOT rendered yet
+  // because the strip itself is hidden when columns.length === 0.
+  await expect(page.getByTestId('board-detail-empty-columns')).toBeVisible()
+  await expect(page.getByTestId('board-detail-add-first-column')).toBeVisible()
+
+  await page.getByTestId('board-detail-add-first-column').click()
+
+  // Form transitions in. Input is autofocused — assert focus so a future
+  // ref-binding regression surfaces here.
+  const input = page.getByTestId('add-column-input')
+  await expect(input).toBeVisible()
+  await expect(input).toBeFocused()
+
+  // Empty-name path: pressing Enter with no input must NOT POST. The
+  // inline validation message renders, the form stays open, and (since
+  // the column was never created) the empty-state CTA stays visible.
+  await input.press('Enter')
+  await expect(page.getByTestId('add-column-validation-error')).toBeVisible()
+  await expect(input).toBeVisible()
+  await expect(page.getByTestId('board-detail-empty-columns')).toBeVisible()
+
+  // Happy path: type name, press Enter. Backend creates the column; the
+  // store appends it to currentBoard.columns; the view re-renders with
+  // the strip branch (since columns.length is now 1) AND the trailing
+  // strip-end "+ Add column" trigger reappears in idle state.
+  const colName = `First col ${username}`
+  await input.fill(colName)
+  await input.press('Enter')
+
+  // The strip mounts with the new column. Validation/error messages are gone.
+  const strip = page.getByTestId('board-detail-columns')
+  await expect(strip).toBeVisible()
+  await expect(strip.getByText(colName)).toBeVisible()
+  await expect(page.getByTestId('add-column-validation-error')).toBeHidden()
+
+  // Strip-end trigger card is back in idle state — the form has reset.
+  // (Asserts the `resetForm()` post-success path didn't leave the form open.)
+  await expect(page.getByTestId('add-column-trigger')).toBeVisible()
+
+  // Sanity: a second column added via the strip-end trigger also lands.
+  // ESC on the open form cancels back to idle (acceptance criterion).
+  await page.getByTestId('add-column-trigger').click()
+  const input2 = page.getByTestId('add-column-input')
+  await expect(input2).toBeFocused()
+  await input2.press('Escape')
+  await expect(input2).toBeHidden()
+  await expect(page.getByTestId('add-column-trigger')).toBeVisible()
+
+  // Open again and create a real second column.
+  await page.getByTestId('add-column-trigger').click()
+  const col2Name = `Second col ${username}`
+  await page.getByTestId('add-column-input').fill(col2Name)
+  await page.getByTestId('add-column-input').press('Enter')
+
+  // Both columns visible in the strip, in creation order (first → second).
+  await expect(strip.getByText(colName)).toBeVisible()
+  await expect(strip.getByText(col2Name)).toBeVisible()
+  // Order check: read the column-name elements directly (not the whole <li>
+  // textContent — the `0 tasks` placeholder lives in the same <li>). The
+  // header's `column-name` span has the per-column testid, but here we
+  // walk the strip in DOM order via the host `li`s and pick out the name.
+  const renderedNames = await strip
+    .locator('> li[data-testid^="board-detail-column-"] [data-testid$="-name"]')
+    .evaluateAll((els) => els.map((el) => el.textContent?.trim() ?? ''))
+  expect(renderedNames).toEqual([colName, col2Name])
 })
 
 test('navigating to /boards/:id for an unknown board renders the not-found branch', async ({

@@ -16,11 +16,12 @@ import { defineStore } from 'pinia'
 import {
   archiveBoardApi,
   createBoardApi,
+  createColumnApi,
   getBoardDetailApi,
   listBoardsApi,
 } from '@/api/boards'
 import { ApiError } from '@/types/auth'
-import type { Board, BoardCreate, BoardDetail } from '@/types/boards'
+import type { Board, BoardCreate, BoardDetail, Column, ColumnCreate } from '@/types/boards'
 
 interface BoardsState {
   boards: Board[]
@@ -46,6 +47,13 @@ interface BoardsState {
   // the message. Server `detail` strings vary; the 404 case is the one we
   // care to special-case in the UI.
   currentBoardError: string | null
+  // Separate flag for create-column-flow (issue #82). Kept distinct from
+  // `creating` (board POST) and `currentBoardLoading` (detail GET) so the
+  // inline `+ Add column` form has its own busy state without flipping the
+  // detail view back into the spinner branch. Boolean (not `id | null`)
+  // because there is at most one in-flight create-column at a time — the
+  // form is single-instance, anchored at the strip end.
+  creatingColumn: boolean
 }
 
 export const useBoardsStore = defineStore('boards', {
@@ -58,6 +66,7 @@ export const useBoardsStore = defineStore('boards', {
     currentBoard: null,
     currentBoardLoading: false,
     currentBoardError: null,
+    creatingColumn: false,
   }),
   actions: {
     async list(): Promise<void> {
@@ -155,6 +164,50 @@ export const useBoardsStore = defineStore('boards', {
         }
       } finally {
         this.currentBoardLoading = false
+      }
+    },
+
+    /** Create a column on a board and append it to the locally-cached
+     * `currentBoard.columns` (issue #82). Backend assigns position as
+     * `MAX(position) + 1000` (PR #147), so the new column always lands at
+     * the end of the strip — appending the returned `ColumnRead` to the
+     * local array matches the canonical server order without a re-fetch.
+     *
+     * Why local-append (not `await getById(boardId)`):
+     *  - Cheaper (one POST vs POST + GET).
+     *  - Avoids the brief loading-spinner flash a re-fetch would cause
+     *    (currentBoardLoading flips to true, the strip vanishes, then
+     *    re-renders with the new column).
+     *  - The local-state-vs-server-truth divergence is bounded: the only
+     *    field we synthesise is array order, and the backend's append-only
+     *    position math guarantees we land in the same slot the next GET
+     *    would return.
+     *
+     *  Phase 3 realtime will introduce the `column.created` event for
+     *  cross-tab / cross-device propagation; until then, a peer's add will
+     *  only show on the next manual refresh — that's the same contract as
+     *  the existing boards-list flows. Filed nothing here because it's
+     *  handled wholesale by the realtime subsystem.
+     *
+     * Guard: only mutate `currentBoard.columns` if the cached board's id
+     * matches `boardId`. Without this guard a fast user-navigation between
+     * /boards/A and /boards/B (with an in-flight create on A) would
+     * splice A's new column into B's strip.
+     *
+     * Errors rethrow so the inline form can render its own message and
+     * stay open. We deliberately do NOT touch `currentBoardError` — that
+     * field is reserved for detail-load failures, the same separation as
+     * `archive()` keeps from `error`. */
+    async createColumn(boardId: number, payload: ColumnCreate): Promise<Column> {
+      this.creatingColumn = true
+      try {
+        const created = await createColumnApi(boardId, payload)
+        if (this.currentBoard && this.currentBoard.id === boardId) {
+          this.currentBoard.columns.push(created)
+        }
+        return created
+      } finally {
+        this.creatingColumn = false
       }
     },
   },
