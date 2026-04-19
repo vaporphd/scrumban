@@ -19,6 +19,7 @@ async function onLogout(): Promise<void> {
       </h1>
       <nav>
         <template v-if="auth.isAuthenticated">
+          <RouterLink to="/boards">Boards</RouterLink>
           <RouterLink to="/profile">{{ auth.user?.username }}</RouterLink>
           <button type="button" class="link-btn" @click="onLogout">Log out</button>
         </template>
