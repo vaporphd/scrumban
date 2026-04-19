@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.board import Board
 from app.db.models.user import User
 from app.domain.boards import BoardCreate, BoardUpdate
+from app.repositories import board_repo
 
 
 class BoardError(Exception):
@@ -28,7 +29,26 @@ class BoardError(Exception):
 
 
 async def create_board(session: AsyncSession, *, creator: User, payload: BoardCreate) -> Board:
-    raise NotImplementedError("create_board lands in issue #69")
+    """Create a board owned by `creator`.
+
+    Per ADR-0001 the service owns the transaction; the router stays
+    thin. Pydantic has already enforced field-level invariants
+    (`name` 1-128, `description` ≤ 4096) — see `app.domain.boards`.
+
+    TODO(ws): publish `board.created` on the `board:{id}` Redis channel
+    once the realtime layer lands (Phase 3, issues 123-134). The
+    `app/realtime/` package does not yet exist; inventing the publisher
+    here would be premature infra. Tracked by the Phase 3 plan in
+    `tasks/todo.md`; the `board:{id}` contract is fixed in ADR-0002.
+    """
+    board = await board_repo.create(
+        session,
+        name=payload.name,
+        description=payload.description,
+        created_by=creator.id,
+    )
+    await session.commit()
+    return board
 
 
 async def get_board(session: AsyncSession, *, actor: User, board_id: int) -> Board:

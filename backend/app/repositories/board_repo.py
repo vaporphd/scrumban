@@ -20,3 +20,23 @@ async def list_active(session: AsyncSession) -> list[Board]:
     stmt = select(Board).where(Board.archived_at.is_(None)).order_by(Board.created_at.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def create(
+    session: AsyncSession,
+    *,
+    name: str,
+    description: str | None,
+    created_by: int,
+) -> Board:
+    """Insert a new board owned by `created_by`.
+
+    Caller is responsible for the surrounding transaction (the service
+    commits — see ADR-0001: routers stay thin, services own
+    transactions). `created_by` is required at write-time; it can become
+    NULL later only if the user row is deleted (FK ON DELETE SET NULL).
+    """
+    board = Board(name=name, description=description, created_by=created_by)
+    session.add(board)
+    await session.flush()
+    return board
