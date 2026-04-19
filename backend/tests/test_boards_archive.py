@@ -90,15 +90,21 @@ async def test_archive_board_idempotent_preserves_timestamp_200(
     first = await client.post(f"/api/boards/{board.id}/archive", headers=auth)
     assert first.status_code == 200
     first_archived_at = first.json()["archived_at"]
+    first_updated_at = first.json()["updated_at"]
     assert first_archived_at is not None
 
     second = await client.post(f"/api/boards/{board.id}/archive", headers=auth)
     assert second.status_code == 200
     second_archived_at = second.json()["archived_at"]
+    second_updated_at = second.json()["updated_at"]
 
     # Idempotency: the timestamp returned the second time is the same
     # one the first call stamped.
     assert second_archived_at == first_archived_at
+    # And `updated_at` must not drift either — the no-op repeat call
+    # must not bump the row's updated_at, otherwise a future refactor
+    # could silently turn idempotent re-archive into a write.
+    assert second_updated_at == first_updated_at
 
 
 @pytest.mark.asyncio
