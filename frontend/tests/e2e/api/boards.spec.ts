@@ -1,4 +1,4 @@
-// Spec #api-3: /api/boards (issues #69 + #70 + #71 + #72) — backend smoke per ADR-0008.
+// Spec #api-3: /api/boards (issues #69 + #70 + #71 + #72 + #73) — backend smoke per ADR-0008.
 //
 // Pure HTTP, no browser. Scenarios:
 //   1. POST  /api/boards with auth → 201 + BoardRead-shaped body (issue #69).
@@ -8,6 +8,9 @@
 //   5. GET   /api/boards/{id} with auth → 200 + columns/labels empty arrays (issue #71).
 //   6. GET   /api/boards/9999999 → 404 (issue #71).
 //   7. PATCH /api/boards/{id} → 200 with new name; re-GET shows new name (issue #72).
+//   8. POST  /api/boards/{id}/archive → 200; default list excludes; ?include_archived
+//      includes; repeat archive still 200 with the same archived_at (issue #73 —
+//      picks up the deferred TODO from issue #70's body).
 //
 // The spec mints its own user (register + login) inline. Idempotent
 // across re-runs because the username is suffixed with crypto.randomUUID
@@ -17,13 +20,6 @@
 // We hit the api directly on http://127.0.0.1:8000/api to mirror the
 // existing `health.spec.ts` shape; the vite proxy is irrelevant for the
 // `request` context.
-//
-// TODO(#73): once `POST /api/boards/{id}/archive` lands, extend this
-// spec with the "archive one → list excludes it; ?include_archived=true
-// includes it" scenario from issue #70's body. Today the archive
-// service method is `NotImplementedError`, so driving the archive path
-// over HTTP is impossible. The pytest suite covers both filter
-// branches directly via the repo (see `backend/tests/test_boards_list.py`).
 
 import { expect, test } from '@playwright/test'
 
@@ -233,6 +229,86 @@ test('PATCH /api/boards/{id} updates the name and a subsequent GET reflects it',
   expect(refetchedBody.id).toBe(boardId)
   expect(refetchedBody.name).toBe(renamed)
   expect(refetchedBody.description).toBe('before patch')
+})
+
+test('POST /api/boards/{id}/archive: default list excludes, include_archived includes, repeat is idempotent', async ({
+  request,
+}) => {
+  // Mint a fresh user and log in.
+  const username = uniq('boards_archive_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Boards Archive E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  // Create two boards: one we'll keep active, one we'll archive.
+  const keepName = uniq('archive-e2e-keep')
+  const archiveName = uniq('archive-e2e-target')
+  const keep = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: keepName, description: 'stays active' },
+  })
+  expect(keep.status()).toBe(201)
+  const archiveTarget = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: archiveName, description: 'will be archived' },
+  })
+  expect(archiveTarget.status()).toBe(201)
+  const keepId = (await keep.json()).id
+  const archiveId = (await archiveTarget.json()).id
+
+  // First archive — 200 + non-null archived_at.
+  const archived = await request.post(`${API}/boards/${archiveId}/archive`, {
+    headers: auth,
+  })
+  expect(archived.status()).toBe(200)
+  const archivedBody = await archived.json()
+  expect(archivedBody.id).toBe(archiveId)
+  expect(archivedBody.archived_at).not.toBeNull()
+  const firstArchivedAt = archivedBody.archived_at
+
+  // Default list excludes the archived board, still includes the kept one.
+  // Other concurrent workers create boards too, so we assert
+  // presence/absence of *our* ids rather than the full list size.
+  const defaultList = await request.get(`${API}/boards`, { headers: auth })
+  expect(defaultList.status()).toBe(200)
+  const defaultIds = new Set((await defaultList.json()).map((b: { id: number }) => b.id))
+  expect(defaultIds.has(keepId)).toBe(true)
+  expect(defaultIds.has(archiveId)).toBe(false)
+
+  // ?include_archived=true brings it back.
+  const includeAll = await request.get(`${API}/boards?include_archived=true`, {
+    headers: auth,
+  })
+  expect(includeAll.status()).toBe(200)
+  const includeAllBody = await includeAll.json()
+  const includeAllIds = new Set(includeAllBody.map((b: { id: number }) => b.id))
+  expect(includeAllIds.has(keepId)).toBe(true)
+  expect(includeAllIds.has(archiveId)).toBe(true)
+  // The archived row carries its archived_at; the kept one stays null.
+  const byId = new Map(
+    includeAllBody.map((b: { id: number; archived_at: string | null }) => [b.id, b]),
+  )
+  expect(byId.get(keepId)?.archived_at).toBeNull()
+  expect(byId.get(archiveId)?.archived_at).not.toBeNull()
+
+  // Repeat archive — still 200, same archived_at (idempotent: the
+  // first stamp is preserved, not refreshed).
+  const repeat = await request.post(`${API}/boards/${archiveId}/archive`, {
+    headers: auth,
+  })
+  expect(repeat.status()).toBe(200)
+  const repeatBody = await repeat.json()
+  expect(repeatBody.archived_at).toBe(firstArchivedAt)
 })
 
 test('GET /api/boards/{id} returns 404 for an unknown id', async ({ request }) => {
