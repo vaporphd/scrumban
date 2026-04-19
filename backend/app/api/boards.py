@@ -117,3 +117,30 @@ async def update_board(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
         raise
     return BoardRead.model_validate(board)
+
+
+@router.post(
+    "/{board_id}/archive",
+    response_model=BoardRead,
+)
+async def archive_board(
+    board_id: int,
+    user: CurrentUser,
+    session: SessionDep,
+) -> BoardRead:
+    """Soft-archive board `board_id`. Idempotent.
+
+    First call stamps `archived_at = now()`; repeat calls are 200 no-ops
+    that preserve the original timestamp (see
+    `boards_service.archive_board` for the rationale). Returns the
+    `BoardRead` for the archived board so clients can refresh local
+    state without a follow-up GET. 404 on unknown id. 401 (no token /
+    bad token) is handled by the `CurrentUser` dependency.
+    """
+    try:
+        board = await boards_service.archive_board(session, actor=user, board_id=board_id)
+    except BoardError as exc:
+        if exc.code == "board_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+        raise
+    return BoardRead.model_validate(board)

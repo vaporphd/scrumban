@@ -163,7 +163,7 @@ scrumban/
 - [x] Модели: `Board`, `Column`, `Task`, `Label`, `TaskLabel` (#36)
 - [x] Миграция (#36, `73cb93ca2565`)
 - [x] Репо-слой + сервисы (переиспользуемые api+bot) (#36, read-only repo + NotImplementedError service skeletons)
-- [ ] REST: `/api/boards` (list/create/get/update/archive)
+- [x] REST: `/api/boards` (list/create/get/update/archive) (#69, #70, #71, #72, #73)
 - [ ] REST: `/api/boards/{id}/columns` (CRUD + reorder)
 - [ ] REST: `/api/boards/{id}/tasks` (list с фильтрами: assignee, label, due, search)
 - [ ] REST: `/api/tasks/{id}` (get/update/delete)

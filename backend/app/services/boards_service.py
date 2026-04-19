@@ -11,6 +11,8 @@ Telegram bot stay in sync.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.board import Board
@@ -152,4 +154,50 @@ async def update_board(
 
 
 async def archive_board(session: AsyncSession, *, actor: User, board_id: int) -> Board:
-    raise NotImplementedError("archive_board lands with the archive endpoint issue")
+    """Soft-archive board `board_id` by stamping `archived_at = now()`.
+
+    Per issue #73: idempotent. The first call sets `archived_at`; repeat
+    calls are 200 no-ops that preserve the original archive timestamp
+    (we do not refresh it on re-archive — the stamp records *when* the
+    board first left active circulation, and overwriting that loses
+    audit value). Routers map the unknown-id case to 404; an
+    already-archived board is **not** an error condition (no 409 / 422).
+
+    The "find archived rows too" lookup uses the plain `get_by_id`
+    repo call rather than `get_by_id_with_relations` because:
+      * we don't need columns/labels eager-loaded — the response is
+        `BoardRead` (top-level fields only);
+      * the read of `board.archived_at` is a single attribute access on
+        the loaded row, no extra query;
+      * archive does not cascade — columns / labels / tasks stay
+        attached so the full tree survives soft-delete (matches the
+        model docstring on `Board.archived_at`).
+
+    RBAC is Phase 7 — for now any authenticated user can archive any
+    board, matching the rest of the Phase 2 endpoints. The `actor`
+    parameter is kept in the signature so the future RBAC filter can
+    land without a router change.
+
+    TODO(ws): publish `board.archived` on the `board:{id}` Redis channel
+    once the realtime layer lands (Phase 3, issues 123-134). Same
+    deferred-publish stance as `create_board` / `update_board` — see
+    those docstrings.
+    """
+    board = await board_repo.get_by_id(session, board_id)
+    if board is None:
+        raise BoardError("board_not_found", f"Board {board_id} not found.")
+    if board.archived_at is None:
+        # First archive — stamp it. Repeat calls fall through and
+        # return the same row with the original timestamp (idempotent
+        # 200 no-op per the issue's acceptance criteria).
+        board.archived_at = datetime.now(UTC)
+        await session.flush()
+        # `updated_at` has `onupdate=func.now()` (TimestampMixin) — the
+        # DB computes the new value, so SQLAlchemy expires the attribute
+        # on flush. Without an explicit refresh, the router's
+        # `BoardRead.model_validate(board)` would trigger a lazy-load
+        # outside the async context → `MissingGreenlet`. Same trap
+        # `update_board` documents.
+        await session.refresh(board, ["updated_at"])
+    await session.commit()
+    return board
