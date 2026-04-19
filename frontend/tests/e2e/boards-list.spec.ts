@@ -1,8 +1,19 @@
 // Spec: boards list view (issue #74) — first frontend Phase 2 view.
 //
 // Page-driven (not request context — this is UI). Mints a fresh user via the
-// existing register helper so a freshly-registered account has zero boards
-// and the empty-state CTA is the deterministic landing.
+// existing register helper, then intercepts `GET /api/boards` to force a
+// deterministic empty response so the empty-state CTA is the assertable
+// landing.
+//
+// Why network interception (not "rely on a fresh user having no boards"):
+// the `GET /api/boards` endpoint is **not user-scoped** yet (RBAC is Phase 7,
+// see backend/app/services/boards_service.py:list_boards docstring). A
+// freshly-registered user sees every board the parallel API-spec workers in
+// `frontend/tests/e2e/api/boards.spec.ts` are creating concurrently in the
+// same DB, so an unmocked spec is non-deterministic under CI load.
+// Intercepting the response keeps this spec focused on the **frontend's**
+// empty-state rendering — backend list semantics are already covered by
+// backend pytest + the api-context boards spec.
 //
 // Subsequent issues (#75 create-board modal, #76 detail view) will extend
 // this spec with create / list / navigate scenarios.
@@ -17,8 +28,20 @@ test('register → /boards → empty-state CTA visible', async ({ page }) => {
 
   await registerViaUi(page, { username, displayName, password })
 
-  // Navigate to /boards directly. A freshly-registered user has no boards,
-  // so the empty-state CTA is the expected landing.
+  // Force the boards-list response to empty so we always land on the
+  // empty-state CTA branch (see file-level docstring).
+  await page.route('**/api/boards', async (route, request) => {
+    if (request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '[]',
+      })
+      return
+    }
+    await route.continue()
+  })
+
   await page.goto('/boards')
 
   // Scope to <main> — the navbar also has a "Boards" link, which would
