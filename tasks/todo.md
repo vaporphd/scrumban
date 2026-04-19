@@ -140,6 +140,7 @@ scrumban/
 - [x] Fully autonomous loop — auto-merge on clean approve, nits are bugs, required smoke coverage, smoke-fail → implementer (#38)
 - [x] Pre-merge loop quick-reference doc at `docs/loop.md` + cross-link from `CLAUDE.md` (#40)
 - [x] Playwright e2e wired into CI as a separate `e2e` job — postgres + redis services, host-side uvicorn + vite, cached chromium, failure artifacts (#26)
+- [x] Pre-push pytest resolves postgres host via localhost by default — `backend/.env.local` override loaded after `.env` by pydantic-settings (#67)
 
 ### Phase 1 — Auth + users (день 3–4)
 - [x] SQLAlchemy модели: `User`, `TgLinkCode` (#1, merged `3dd6cf6`)

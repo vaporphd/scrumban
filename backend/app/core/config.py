@@ -43,8 +43,18 @@ class StorageSettings(BaseSettings):
 
 
 class Settings(BaseSettings):
+    # `.env.local` is loaded after `.env` so host-shell overrides win without
+    # touching the compose-shaped `.env`. Canonical use case: `.env` sets
+    # `DATABASE__URL=...@postgres:5432/...` (compose DNS, resolves inside the
+    # api container), and a developer's `.env.local` sets the same key to
+    # `...@localhost:5432/...` so the pre-push pytest hook on the host shell
+    # can reach the compose-published port without `--no-verify`. `.env.local`
+    # is gitignored (`.env.*` with `!.env.example` in the root `.gitignore`)
+    # and not consumed by `docker-compose.yml` (compose loads `backend/.env`
+    # only via `env_file:`). See `backend/.env.local.example` for the minimal
+    # template and issue #67 for the motivating bug.
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         extra="ignore",

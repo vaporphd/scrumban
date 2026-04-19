@@ -2,13 +2,12 @@
 
 ## Status
 
-Branch `main`, in sync with `origin/main`. **Phase 0 complete. Phase 1 complete end-to-end** — auth backend + frontend auth views + username-enumeration timing fix + Telegram link-code surface (web side). Developer-experience tooling includes a real-browser e2e layer (ADR-0006), a fully autonomous pre-merge review loop with agent-authored auto-merge on clean `approve` (ADR-0007), a mandatory Playwright spec on every task including backend-only (ADR-0008), a pinned-ruff invariant across pre-commit + CI + pyproject, a compose-aware vite dev proxy, a registry-safe `smoke-tester` agent description, a dedicated CI `e2e` job running Playwright on every push/PR, and — as of this readiness pass — agent rule updates widening the smoke gate, codifying `/loop` mode issue pickup, recording the known `DATABASE__URL` pre-push workaround, and documenting the 3 retroactive ADRs for policy decisions that previously shipped without one.
+Branch `main`, in sync with `origin/main`. **Phase 0 complete. Phase 1 complete end-to-end** — auth backend + frontend auth views + username-enumeration timing fix + Telegram link-code surface (web side). Developer-experience tooling includes a real-browser e2e layer (ADR-0006), a fully autonomous pre-merge review loop with agent-authored auto-merge on clean `approve` (ADR-0007), a mandatory Playwright spec on every task including backend-only (ADR-0008), a pinned-ruff invariant across pre-commit + CI + pyproject, a compose-aware vite dev proxy, a registry-safe `smoke-tester` agent description, a dedicated CI `e2e` job running Playwright on every push/PR, and — post-#67 — an optional `backend/.env.local` override that pydantic-settings loads after `.env` so host-shell tools (pre-push pytest, local uvicorn) reach the compose-published Postgres port at `localhost:5432` without the old `DATABASE__URL=... git push ...` env prefix.
 
-**Session-restart pending**: the `smoke-tester` agent was fixed in PR 44 but Claude Code's agent registry only reloads on a fresh session. Before kicking off `/loop`, fully exit Claude Code (not resume) and relaunch so `smoke-tester` registers.
-
-**70-issue queue ready**. Issue 67 is the entry point — pre-push `postgres` DNS fix lands first so subsequent PRs don't need the `DATABASE__URL` env workaround.
+**70-issue queue in progress**. Issue 68 is next — the `--no-verify` block on pure-non-docs diffs — now unblocked because #67 removed the legitimate reason for hosts to need `--no-verify` in the first place.
 
 Merged to `main` (recent — earlier history in `git log`):
+- Issue 67 / PR (pending merge) — `backend/.env.local` override loaded after `.env` by pydantic-settings; compose `env_file` untouched (`backend/.env` stays compose-shaped with `@postgres:5432/...`); `.env.local.example` template tracked; README + `CLAUDE.md → implementer.md` canonical-fix note updated; mandatory smoke spec `frontend/tests/e2e/api/health.spec.ts` added (Playwright `request` context, no browser). Pre-push pytest now passes on the host shell without the `DATABASE__URL=... git push` prefix.
 - **DX pre-loop readiness pass** (direct-to-main) — widened reviewer smoke gate to "any behavior change"; added Playwright mandate + env workaround + `followup.md` prune rule to implementer; added `/loop` mode issue-pickup rules to `CLAUDE.md`; kept `docs/loop.md` in sync; pointer from `tasks/todo.md` Phase 2 to the issue queue; ADRs 0006 / 0007 / 0008 filed retroactively for decisions that previously shipped without one.
 - DX issue 26 / PR 45 — `e2e` CI job (postgres + redis services, host-side uvicorn + vite, cached chromium, failure artifacts). First-run green (6/6 specs, 5.6s). Not yet in branch-protection required checks.
 - DX issue 43 / PR 44 — `smoke-tester` agent description trimmed 445 → 268 chars so it re-registers.
@@ -31,11 +30,11 @@ ADRs in force: 0001 (api+bot split with shared services), 0002 (Redis pub/sub re
 
 ## Next
 
-1. **Restart Claude Code fresh** — exit the CLI entirely (not resume) and relaunch so `smoke-tester` re-registers from disk. Verify via agent list before starting `/loop`.
+1. **Loop auto-picks issue 68** (`chore(dx): pre-push hook blocks --no-verify to main unless diff is pure docs`). Now unblocked: the legitimate host-env reason to reach for `--no-verify` is gone post-#67, so the hook can safely tighten. Expected loop: implementer → smoke-tester (api spec) → reviewer → auto-merge.
 
-2. **Run `/loop` starting at issue 67** (`fix(dx): pre-push pytest resolves postgres host via localhost by default`). First task in the 70-issue queue by design — landing it removes the need for the `DATABASE__URL` env prefix on every subsequent push. Expected loop: implementer → smoke-tester (exercises `api/health.spec.ts`) → reviewer → auto-merge.
+2. **After 68 closes, loop continues to issue 36** (Phase 2 models: `Board`, `Column`, `Task`, `Label`, `TaskLabel` + migration). First real Phase 2 work; every following endpoint PR depends on these models landing.
 
-3. **After issue 67 closes, the loop auto-picks 68** (`chore(dx): pre-push hook blocks --no-verify to main unless diff is pure docs`). Then 36 (Phase 2 models), 69 (POST /api/boards), 70 (GET /api/boards), and onward sequentially through Phase 2 → Phase 3.
+3. **Then issues 69 and 70** — `POST /api/boards` (create board, owner auto-membership) and `GET /api/boards` (list member's boards). Phase 2 REST begins.
 
 4. **Deferred user actions** (none gate the loop):
    - Flip `e2e` CI job to branch-protection required check after 2-3 more green runs: `gh api -X PATCH repos/vaporphd/scrumban/branches/main/protection/required_status_checks -F 'strict=true' -f 'contexts[]=backend' -f 'contexts[]=frontend' -f 'contexts[]=e2e'`.
