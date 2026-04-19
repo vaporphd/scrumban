@@ -5,14 +5,16 @@ How an issue becomes a merged PR under the autonomous loop. Read `CLAUDE.md` "Pr
 ## Flow
 
 ```
-"do #N"
-  → implementer (branch, code, tests, push, PR)
-  → smoke-tester (if user-visible feature) OR reviewer (if pure infra/docs)
+"do #N"  OR  /loop auto-pick (lowest-numbered open issue)
+  → implementer (branch, code, tests, Playwright spec per issue body, push, PR)
+  → smoke-tester (if PR has Playwright spec — per 2026-04-19 that's every non-pure-infra PR)
+      OR reviewer (pure infra / pure docs / agent-description / CI-only)
   → on smoke green → reviewer
   → on smoke fail → implementer (same branch, trace diagnosis, fix) → smoke-tester re-run
   → on reviewer approve (zero findings) → auto-merge
   → on reviewer changes-requested (any finding any severity) → implementer → reviewer re-run
   → DONE (no user question in the normal flow)
+  → /loop mode: main session auto-picks next issue, repeats
 ```
 
 ## Metric
@@ -21,10 +23,11 @@ User input per PR in the normal flow: 1 word (the issue number / "go"). Down fro
 
 ## Key terms
 
-- **user-visible feature**: new frontend view/route, new endpoint surfaced in the UI, new button/flow/state, new bot command visible to a user. Quick heuristic from `reviewer.md` "Smoke-test coverage gate": "could a regression here be caught by Playwright in a real browser?"
-- **pure infra/docs**: pre-commit configs, CI workflows, Dockerfiles, markdown, backend-internal refactors with zero user observability. Exempt from the smoke-tester gate.
-- **any finding**: one or more must-fix, should-fix, or nit in the reviewer's report. All three severities route identically through the loop (authorization 2026-04-17: "suggestions should be treated as a bug").
+- **Playwright spec mandate (2026-04-19)**: every PR — backend, frontend, full-stack — ships a Playwright spec. Backend uses `request` context under `frontend/tests/e2e/api/*.spec.ts`; frontend uses `page` context under `frontend/tests/e2e/*.spec.ts`. Rationale in `tasks/lessons.md`. Widens the smoke gate from "user-visible feature" to "any behavior change".
+- **pure infra / docs**: CI workflows, Dockerfiles, pre-commit configs, agent descriptions, markdown docs, pure-test-only refactors. Only these are exempt from the smoke gate.
+- **any finding**: one or more must-fix, should-fix, or nit in the reviewer's report. All three severities route identically (authorization 2026-04-17: "suggestions should be treated as a bug").
 - **auto-merge**: `gh pr merge N --auto --squash --delete-branch`. GitHub waits for CI green and merges. Issue auto-closes via `Closes #N` in PR body.
+- **/loop mode**: main session auto-picks the lowest-numbered open issue instead of waiting for `do #N`. See `CLAUDE.md` → "Automated /loop mode — issue pickup".
 
 ## Exception paths
 

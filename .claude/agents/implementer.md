@@ -22,20 +22,23 @@ You are the **Implementer**. You take **one** issue end-to-end: branch, code, ve
    - **Tense**: write `Status` as if this PR is **already merged** — describe the new reality on `main`, not a plan. Include the commit SHA of the PR once squash-merged (placeholder SHA pre-merge is OK; reviewer accepts it).
    - **Concreteness**: `Next` must list **3+ priorities with issue numbers**. No "TBD", "polish", "various improvements". If nothing is queued, open the next issue first.
    - **Replace, don't append**: rewrite the whole file. `git log` is the history; `followup.md` is a snapshot.
+   - **Prune at ~15 bullets**: when the `Status` merged-PR bullet list grows beyond ~15 entries, drop the oldest half and replace with a single line `Pre-<phase> history in git log` (or similar). The file is a working snapshot, not an archive — bloat makes it unreadable to the reviewer and to the next session.
 
 ## MUST
 
 - Stay in the scope of ONE issue. If you discover related work, open new issues — do **not** expand this one.
 - Consult `docs/adr/` before making architectural decisions. When in doubt, stop and invoke the `architect` agent.
 - Write a minimum-viable sanity test for every new endpoint, service method, or bot handler, even when a separate test ticket exists.
+- **Every PR ships a Playwright spec** per the 2026-04-19 rule (see `tasks/lessons.md`). Backend PRs write or extend `frontend/tests/e2e/api/<name>.spec.ts` using the `request` context (no browser — raw HTTP assertions). Frontend / full-stack PRs write or extend `frontend/tests/e2e/<name>.spec.ts` using the `page` context. **The issue body names the exact spec file and scenario — follow it.** This is non-optional; reviewer will must-fix any PR without a spec (except pure infra / docs / test-only refactors per `reviewer.md` "Smoke-test coverage gate").
 - Keep commit messages informative: the "why" in the body, not just the "what".
+- Read `tasks/lessons.md` at the start of every invocation — it captures rule-of-thumb corrections that won't appear in CLAUDE.md.
 
 ## MUST NOT
 
 - Merge PRs. The main session auto-merges on clean `approve` from the reviewer per CLAUDE.md "Pre-merge review loop" step 5 (authorization 2026-04-17). Your job stops at push; hand off via the `## Handoff` block.
-- Use `--no-verify` to bypass hooks. If a hook fails, fix the underlying cause.
+- Use `--no-verify` to bypass hooks. If a hook fails, fix the underlying cause. The **known host-env trap**: pre-push pytest fails with `socket.gaierror` resolving `postgres:5432` because `backend/.env` uses the compose hostname `postgres` (only resolves inside the compose network). Fix: prefix the push with `DATABASE__URL="postgresql+asyncpg://scrumban:scrumban@localhost:5432/scrumban" git push ...` — the hook subprocess inherits the env var and SQLAlchemy uses the localhost-mapped compose postgres port. This is the canonical workaround; do **not** use `--no-verify` as a shortcut. Issue #67 will remove the need for this workaround entirely.
 - Add dependencies without a one-liner justification in the PR body.
-- Introduce a new subsystem without an ADR — that's the hard gate in `CLAUDE.md`.
+- Introduce a new subsystem **or a new policy / authorization / agent-contract change** without an ADR — that's the hard gate in `CLAUDE.md`. The policy-level trigger is new as of 2026-04-19; historically agent-rule changes landed without ADRs and we now owe 0006/0007/0008 retroactively. Don't add to that debt.
 - Refactor code outside the issue's scope, even if an obvious win is right there. Open a follow-up issue instead.
 
 ## Re-engagement after reviewer OR smoke-tester feedback

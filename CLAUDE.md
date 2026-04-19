@@ -260,7 +260,7 @@ When the implementer finishes a PR, the main session runs this loop **without as
 
 Quick-reference diagram: [`docs/loop.md`](docs/loop.md).
 
-1. Implementer reports `ready to merge pending authorization` → main session **immediately** delegates to `smoke-tester` (if PR touches `frontend/`, OR if PR adds/modifies any user-visible feature per `reviewer.md` "Smoke-test coverage gate"; effectively: any non-pure-infra PR) or `reviewer` (if truly backend-only / infra-only / docs-only). Do not ask "should I run reviewer?" — the answer is always yes.
+1. Implementer reports `ready to merge pending authorization` → main session **immediately** delegates to `smoke-tester` (for any PR that carries a Playwright spec — per the 2026-04-19 rule that's effectively every non-pure-infra PR, including backend-only ones whose specs live under `frontend/tests/e2e/api/*.spec.ts`) or `reviewer` (if truly pure infra — CI configs / Dockerfiles / agent descriptions / pure docs). Do not ask "should I run reviewer?" — the answer is always yes.
 
 2. On `smoke-tester` `green` → main session immediately delegates to `reviewer`. On `smoke-tester` `reproduced, handoff to implementer` → main session **immediately** delegates to `implementer` with the smoke artifacts (failing scenario name, first 30 lines of failure output, artifact directory path) as the brief. Implementer fixes the regression on the same branch; loop re-enters at step 1 (smoke-tester re-runs against the new commit). **No new issue is filed** — the failing spec IS the reproducer; the fix belongs in this PR. If implementer determines the failure is pre-existing (not caused by this PR's diff), they escalate to `bug-hunter` with the artifacts and pause this PR — that's an exception path, the implementer's call based on `git diff`, not the main session's default route.
 
@@ -273,3 +273,29 @@ Quick-reference diagram: [`docs/loop.md`](docs/loop.md).
 6. After implementer pushes a review-fix commit → main session **immediately** re-invokes `reviewer` (and `smoke-tester` first if frontend/feature changed). Loop until step 5 (auto-merge) or an agent reports an unresolvable blocker.
 
 The loop terminates only at step 5 (auto-merge executes) or when an agent reports a blocker. The user can always interrupt and pivot at any step.
+
+### Automated /loop mode — issue pickup
+
+When the user starts a `/loop` session (or simply says "run the loop"), the main session auto-picks the next issue rather than waiting for a `do #N` instruction. Pickup rules:
+
+1. **Default policy — lowest-numbered open issue, dependency-ordered**. Run:
+   ```sh
+   gh issue list --state open --json number --jq '[.[].number] | min'
+   ```
+   The queue (#67-#134) was filed in strict dependency order; lowest-open-number ≈ next-unblocked-work. Simple and reliable.
+
+2. **Exceptions the main session applies without asking**:
+   - If the lowest-open issue is a `test(api): *` issue that depends on the associated feature endpoints being merged, verify those are closed first. If not, skip to the next issue and flag to the user.
+   - If the issue is blocked by an unresolved blocker issue (main session files these when smoke-tester reports pre-existing fails), skip.
+
+3. **User override**: at any time the user can say `do #N` or `skip to #M` — main session switches context immediately and rewinds the queue afterward.
+
+4. **Between iterations, main session re-reads**: `CLAUDE.md` "Pre-merge review loop", `tasks/lessons.md`, and the last 5 lines of `followup.md Status` so context doesn't drift after compaction.
+
+5. **Stop conditions**:
+   - No open issues remain → report "queue drained" and stop.
+   - Agent reports blocker the main session can't resolve → report + stop.
+   - User interrupts → stop on next safe checkpoint (after current PR merges or hits a review loop).
+   - Token budget approached (if /loop dynamic mode signals) → finish current PR, then pause.
+
+6. **Cross-iteration invariant**: the main session does not hold state across `/loop` wakeups — everything must be rederivable from `gh issue list`, `gh pr list`, `followup.md`, and the agent files on disk. Do not rely on "I remember we were working on #69" — re-derive.
