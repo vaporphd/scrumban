@@ -360,7 +360,6 @@ async def test_reorder_columns_empty_list_422(
 @pytest.mark.asyncio
 async def test_reorder_columns_no_auth_401(
     client: AsyncClient,
-    db_session: AsyncSession,
 ) -> None:
     """Missing `Authorization` → 401 (handled by `CurrentUser` dep)."""
     # No need to seed a board — the dep fires before the handler runs.
