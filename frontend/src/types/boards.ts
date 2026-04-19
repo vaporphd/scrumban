@@ -57,3 +57,12 @@ export interface BoardCreate {
   name: string
   description?: string | null
 }
+
+// Mirrors backend `ColumnCreate` (app/domain/columns.py — see PR #145): name
+// 1-128 chars, optional `wip_limit` (positive integer; null/omitted = no
+// limit). Position is server-assigned (`MAX(position) + 1000`, see PR #147),
+// so the client never sends it.
+export interface ColumnCreate {
+  name: string
+  wip_limit?: number | null
+}
