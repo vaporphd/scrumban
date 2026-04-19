@@ -175,3 +175,92 @@ describe('useBoardsStore.create', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('useBoardsStore.archive', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs the archive, refreshes the list (which excludes the archived row), and clears archiving', async () => {
+    const archived = {
+      id: 7,
+      name: 'Sandbox',
+      description: null,
+      created_by: 1,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T11:00:00Z',
+      archived_at: '2026-04-19T11:00:00Z',
+    }
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      // POST /api/boards/7/archive
+      .mockResolvedValueOnce(jsonResponse(200, archived))
+      // GET /api/boards (refresh excludes archived; default list is empty now)
+      .mockResolvedValueOnce(jsonResponse(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    await store.archive(7)
+
+    expect(store.boards).toEqual([])
+    expect(store.archiving).toBeNull()
+    expect(store.error).toBeNull()
+
+    const [postUrl, postInit] = fetchMock.mock.calls[0] ?? []
+    expect(postUrl).toBe('/api/boards/7/archive')
+    expect((postInit as RequestInit | undefined)?.method).toBe('POST')
+  })
+
+  it('sets archiving=<id> while the POST is in flight', async () => {
+    let resolvePost!: (response: Response) => void
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolvePost = resolve
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    const pending = store.archive(42)
+
+    expect(store.archiving).toBe(42)
+
+    resolvePost(
+      jsonResponse(200, {
+        id: 42,
+        name: 'X',
+        description: null,
+        created_by: 1,
+        created_at: '2026-04-19T10:00:00Z',
+        updated_at: '2026-04-19T11:00:00Z',
+        archived_at: '2026-04-19T11:00:00Z',
+      }),
+    )
+    await pending
+
+    expect(store.archiving).toBeNull()
+  })
+
+  it('rethrows on failure, clears archiving, captures detail in error, and skips refresh', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(404, { detail: 'board_not_found' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+
+    await expect(store.archive(999)).rejects.toMatchObject({
+      status: 404,
+      detail: 'board_not_found',
+    })
+    expect(store.archiving).toBeNull()
+    expect(store.error).toBe('board_not_found')
+    // No refresh fires when archive POST fails.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})

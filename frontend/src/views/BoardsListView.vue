@@ -15,13 +15,31 @@
 //  - Empty-state CTA "Create your first board" (only when boards.length === 0).
 // Both flip the same `isModalOpen` ref so there's a single owner of the modal
 // lifecycle. On `created` we close + the store has already refreshed the list.
+//
+// Issue #76 added per-row archive: each row gets an inline "Archive" button
+// (not a kebab — the issue body says "menu" but doesn't specify, and a single
+// inline button is the simpler shape for Phase 2 with one row-level action).
+// A reusable ConfirmDialog is opened with the target board's name in the body;
+// on confirm we call boards.archive(id), which POSTs and re-fetches. The
+// default GET excludes archived boards (issue #70's `include_archived=False`),
+// so the row disappears from the list automatically.
+//
+// "Show archived" toggle is intentionally deferred — issue #76 marks it
+// optional and the Phase 2 frontend backlog has no consumer yet. Add it as a
+// follow-up when board-restore lands or when bot/web sync needs it.
 
 import { onMounted, ref } from 'vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CreateBoardModal from '@/components/CreateBoardModal.vue'
 import { useBoardsStore } from '@/stores/boards'
+import type { Board } from '@/types/boards'
 
 const boards = useBoardsStore()
 const isModalOpen = ref(false)
+// Holds the board the user is currently confirming-archive for, or null when
+// the dialog is closed. Storing the whole board (not just the id) lets us put
+// the board's name in the dialog body without a second lookup.
+const confirmingArchive = ref<Board | null>(null)
 
 onMounted(() => {
   void boards.list()
@@ -37,6 +55,28 @@ function openModal(): void {
 
 function closeModal(): void {
   isModalOpen.value = false
+}
+
+function openArchiveConfirm(board: Board): void {
+  confirmingArchive.value = board
+}
+
+function cancelArchive(): void {
+  confirmingArchive.value = null
+}
+
+async function confirmArchive(): Promise<void> {
+  const target = confirmingArchive.value
+  if (!target) return
+  try {
+    await boards.archive(target.id)
+    confirmingArchive.value = null
+  } catch {
+    // Error is already on `boards.error`; the list view will surface it via
+    // its existing error slot on next render. We close the dialog so the user
+    // can read the inline error rather than a stale modal hovering on top.
+    confirmingArchive.value = null
+  }
 }
 </script>
 
@@ -75,11 +115,25 @@ function closeModal(): void {
     </div>
 
     <ul v-else class="board-list" data-testid="boards-list">
-      <li v-for="board in boards.boards" :key="board.id" class="board-item">
+      <li
+        v-for="board in boards.boards"
+        :key="board.id"
+        class="board-item"
+        :data-testid="`board-row-${board.id}`"
+      >
         <RouterLink :to="`/boards/${board.id}`" class="board-link">
           <span class="board-name">{{ board.name }}</span>
           <span v-if="board.description" class="board-description">{{ board.description }}</span>
         </RouterLink>
+        <button
+          type="button"
+          class="archive-button"
+          :data-testid="`board-row-archive-${board.id}`"
+          :disabled="boards.archiving === board.id"
+          @click="openArchiveConfirm(board)"
+        >
+          {{ boards.archiving === board.id ? 'Archiving…' : 'Archive' }}
+        </button>
       </li>
     </ul>
 
@@ -87,6 +141,18 @@ function closeModal(): void {
       v-if="isModalOpen"
       @cancel="closeModal"
       @created="closeModal"
+    />
+
+    <ConfirmDialog
+      v-if="confirmingArchive"
+      title="Archive this board?"
+      :body="`'${confirmingArchive.name}' will be hidden from the boards list.`"
+      confirm-label="Archive"
+      cancel-label="Cancel"
+      :busy="boards.archiving === confirmingArchive.id"
+      testid-prefix="archive-board-confirm"
+      @cancel="cancelArchive"
+      @confirm="confirmArchive"
     />
   </section>
 </template>
@@ -153,12 +219,16 @@ button {
   gap: 0.5rem;
 }
 .board-item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
   border: 1px solid #e0e0e0;
   border-radius: 6px;
   background: #fff;
 }
 .board-link {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.75rem 1rem;
@@ -174,5 +244,20 @@ button {
 .board-description {
   font-size: 0.85rem;
   color: #555;
+}
+.archive-button {
+  align-self: center;
+  margin-right: 0.5rem;
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.archive-button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+.archive-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 </style>

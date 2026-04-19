@@ -11,7 +11,7 @@
 // `getById()`, etc. — keep those changes additive.
 
 import { defineStore } from 'pinia'
-import { createBoardApi, listBoardsApi } from '@/api/boards'
+import { archiveBoardApi, createBoardApi, listBoardsApi } from '@/api/boards'
 import { ApiError } from '@/types/auth'
 import type { Board, BoardCreate } from '@/types/boards'
 
@@ -22,6 +22,12 @@ interface BoardsState {
   // Separate flag for create-flow: the modal owns its own busy state and we
   // don't want a POST to flip the list view back into the spinner branch.
   creating: boolean
+  // Tracks the in-flight archive's board id so a single row's button can show
+  // a per-row spinner without disabling the whole list. `null` when nothing is
+  // in flight. We use `id | null` (not a `boolean`) deliberately so the view
+  // can scope the spinner to one row even if a future iteration permits
+  // overlapping archives.
+  archiving: number | null
 }
 
 export const useBoardsStore = defineStore('boards', {
@@ -30,6 +36,7 @@ export const useBoardsStore = defineStore('boards', {
     loading: false,
     error: null,
     creating: false,
+    archiving: null,
   }),
   actions: {
     async list(): Promise<void> {
@@ -68,6 +75,37 @@ export const useBoardsStore = defineStore('boards', {
         return created
       } finally {
         this.creating = false
+      }
+    },
+
+    /** Archive a board, then re-fetch the list so the row disappears
+     * (the default GET excludes archived boards — issue #70).
+     *
+     * Track the in-flight board id so the row's button can show a spinner
+     * without affecting other rows. Like `create()`, we re-fetch (rather
+     * than mutate `this.boards` in place) to keep the server canonical:
+     * if the user races two archives or a peer archives concurrently, the
+     * refetch reconciles state without bookkeeping here.
+     *
+     * Errors propagate to the caller so the view can show an inline message
+     * (mirrors `create()`'s rejection contract). The `archiving` flag is
+     * cleared in the `finally` block either way; `error` is set on failure
+     * so the list view can surface it via the existing `state-error` slot. */
+    async archive(id: number): Promise<void> {
+      this.archiving = id
+      this.error = null
+      try {
+        await archiveBoardApi(id)
+        await this.list()
+      } catch (e) {
+        if (e instanceof ApiError) {
+          this.error = e.detail ?? e.message
+        } else {
+          this.error = (e as Error).message ?? 'Failed to archive board'
+        }
+        throw e
+      } finally {
+        this.archiving = null
       }
     },
   },
