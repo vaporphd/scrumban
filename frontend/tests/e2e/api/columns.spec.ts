@@ -1,5 +1,5 @@
 // Spec #api-4: /api/boards/{id}/columns + /api/columns/{id} (issues
-// #77, #78) — backend smoke per ADR-0008.
+// #77, #78, #79) — backend smoke per ADR-0008.
 //
 // Pure HTTP, no browser. Scenarios:
 //   1. POST /api/boards/{id}/columns with auth on a fresh board → 201 +
@@ -8,10 +8,23 @@
 //   3. PATCH /api/columns/{id} renames a column; subsequent
 //      GET /api/boards/{id} reflects the new name in its embedded
 //      columns list (the cross-endpoint contract issue #78 locks).
+//   4. PATCH /api/columns/{id} on unknown column → 404.
+//   5. DELETE /api/columns/{id} on an empty column → 204; the parent
+//      board's GET no longer lists it (cross-endpoint contract).
+//   6. DELETE /api/columns/{id} on unknown column → 404.
 //
-// Later issues (#79 DELETE, #80 reorder) extend this file rather than
-// fanning out into per-verb specs — keeps the columns smoke story in
-// one place.
+// TODO(#90): extend with "POST a task into a column, then DELETE the
+// column → 409 with body {detail: 'column_has_tasks', task_count: N}".
+// Deferred because seeding a task requires the public POST /api/tasks
+// endpoint, which lands with issue #90. The pytest suite covers the
+// 409 branch end-to-end via direct DB seeding (see
+// `backend/tests/test_columns_delete.py`); the smoke gap is the
+// HTTP-level cross-endpoint check, which this TODO claims back once
+// #90 ships.
+//
+// The next column-shaped issue (#80, reorder) extends this file
+// rather than fanning out into a per-verb spec — keeps the columns
+// smoke story in one place.
 //
 // The spec mints its own user (register + login) inline. Idempotent
 // across re-runs because the username is suffixed with crypto.randomUUID
@@ -199,6 +212,96 @@ test('PATCH /api/columns/{id} with an unknown column id returns 404', async ({ r
   const response = await request.patch(`${API}/columns/9999999`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     data: { name: uniq('orphan-rename') },
+  })
+  expect(response.status()).toBe(404)
+})
+
+test('DELETE /api/columns/{id} on an empty column returns 204 and removes it from the board', async ({
+  request,
+}) => {
+  // The cross-endpoint contract: DELETE drops the column at /columns/{id},
+  // and a follow-up GET /api/boards/{id} no longer lists it in its
+  // embedded `columns[]`. If the DELETE didn't commit, or if the board
+  // detail came from a stale cache, this scenario catches it.
+  const username = uniq('columns_delete_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Columns DELETE E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  // Fresh board.
+  const boardName = uniq('columns-delete-board')
+  const createdBoard = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: boardName, description: 'host board for DELETE smoke' },
+  })
+  expect(createdBoard.status()).toBe(201)
+  const { id: boardId } = await createdBoard.json()
+
+  // Two columns — we delete one, the sibling must survive (defensive
+  // sibling-not-cascaded check, mirroring the pytest equivalent).
+  const doomedName = uniq('doomed')
+  const survivorName = uniq('survivor')
+  const doomed = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: doomedName },
+  })
+  expect(doomed.status()).toBe(201)
+  const { id: doomedId } = await doomed.json()
+  const survivor = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: survivorName },
+  })
+  expect(survivor.status()).toBe(201)
+  const { id: survivorId } = await survivor.json()
+
+  // DELETE the empty column.
+  const deleted = await request.delete(`${API}/columns/${doomedId}`, {
+    headers: auth,
+  })
+  expect(deleted.status()).toBe(204)
+  // 204 must have no body.
+  expect(await deleted.text()).toBe('')
+
+  // GET the board — embedded columns no longer mention the doomed
+  // column, but the survivor is still there.
+  const boardAfter = await request.get(`${API}/boards/${boardId}`, {
+    headers: auth,
+  })
+  expect(boardAfter.status()).toBe(200)
+  const boardBody = await boardAfter.json()
+  const ids = boardBody.columns.map((c: { id: number }) => c.id)
+  expect(ids).not.toContain(doomedId)
+  expect(ids).toContain(survivorId)
+})
+
+test('DELETE /api/columns/{id} on an unknown column id returns 404', async ({ request }) => {
+  // Mint a user — endpoint requires auth before it can decide on 404.
+  const username = uniq('columns_delete_404_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Columns DELETE 404 E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+
+  const response = await request.delete(`${API}/columns/9999999`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
   })
   expect(response.status()).toBe(404)
 })

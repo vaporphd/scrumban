@@ -6,8 +6,8 @@ Mounted at `/api` from `app.main_api`. Routes split into two shapes:
     *creation*, because you can only add a column *to* a board (the
     parent must exist; new column has no id yet).
   * Flat shape `/columns/{column_id}` — used for per-column verbs
-    (PATCH here, DELETE / reorder coming with issues #79, #80) because
-    once a column exists its identity is global; the parent board is
+    (PATCH, DELETE here, reorder coming with issue #80) because once
+    a column exists its identity is global; the parent board is
     reachable via the row's `board_id`.
 
 Keeping both shapes in this file means the columns surface stays in
@@ -20,7 +20,8 @@ boundaries live in the service.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 
 from app.api.deps import CurrentUser, SessionDep
 from app.domain.columns import ColumnCreate, ColumnRead, ColumnUpdate
@@ -93,9 +94,56 @@ async def update_column(
         )
     except (ColumnError, BoardError) as exc:
         # Both surface as 404 to keep the obscurity contract (see
-        # service docstring). When #79 lands, ColumnError will also
-        # carry "column_has_tasks" → 409; that branches off here.
+        # service docstring). The DELETE branch below adds the 409
+        # `column_has_tasks` shape; that code never reaches PATCH.
         if exc.code in {"column_not_found", "board_not_found"}:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
         raise
     return ColumnRead.model_validate(column)
+
+
+@router.delete(
+    "/columns/{column_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_column(
+    column_id: int,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    """Delete column `column_id`, refusing if it still holds tasks.
+
+    Per issue #79: 204 on empty column; 409 with body
+    `{"detail": "column_has_tasks", "task_count": N}` if the column
+    still contains one or more tasks; 404 on unknown column id and on
+    columns whose parent board is archived (same obscurity contract as
+    PATCH). 401 (no token / bad token) is handled by the `CurrentUser`
+    dependency.
+
+    Why a hand-built `JSONResponse` for the 409 branch rather than
+    `HTTPException`: FastAPI's `HTTPException(detail={...})` would
+    nest the structure as `{"detail": {"detail": "...",
+    "task_count": N}}`, which doesn't match the issue's flat shape.
+    Building the response directly is the only way to land
+    `{"detail": <string>, "task_count": <int>}` at the top level
+    while keeping the `Authorization` dependency, FastAPI's exception
+    pipeline, and the OpenAPI schema all behaving normally for the
+    other status codes.
+    """
+    try:
+        await columns_service.delete_column(session, actor=user, column_id=column_id)
+    except ColumnError as exc:
+        if exc.code == "column_has_tasks":
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"detail": "column_has_tasks", "task_count": exc.task_count},
+            )
+        if exc.code == "column_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+        raise
+    except BoardError as exc:
+        if exc.code == "board_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+        raise
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

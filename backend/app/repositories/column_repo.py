@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.column import Column
+from app.db.models.task import Task
 
 
 async def get_by_id(session: AsyncSession, column_id: int) -> Column | None:
@@ -56,6 +57,40 @@ async def create(
     session.add(column)
     await session.flush()
     return column
+
+
+async def task_count_for_column(session: AsyncSession, column_id: int) -> int:
+    """Return the number of tasks attached to `column_id`.
+
+    Used by `columns_service.delete_column` (issue #79) to enforce the
+    "non-empty column cannot be deleted" rule. Lives here rather than in
+    `task_repo` because the count is column-scoped policy — the column
+    repo owns the column's invariants, and `task_repo` shouldn't grow a
+    column-shaped helper just to satisfy one service. A single
+    `SELECT COUNT(*)` is cheap (the `(column_id, position)` index on
+    `tasks` makes this an index-only scan in Postgres).
+    """
+    stmt = select(func.count()).select_from(Task).where(Task.column_id == column_id)
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
+async def delete(session: AsyncSession, column: Column) -> None:
+    """Delete the loaded `column` row.
+
+    Caller (the service) is responsible for the surrounding transaction
+    AND for enforcing the "column must be empty" precondition before
+    calling this — see `columns_service.delete_column`. We intentionally
+    do not check task count here: the repo is a thin SQL layer per
+    ADR-0001, not a policy boundary.
+
+    `Column.tasks` has `cascade="all, delete-orphan"` and the FK on
+    `tasks.column_id` is `ON DELETE CASCADE`, so a non-empty delete
+    would silently take the tasks with it. The service guards against
+    that case with a 409 — this call only runs after the count is zero.
+    """
+    await session.delete(column)
+    await session.flush()
 
 
 async def apply_updates(session: AsyncSession, column: Column, fields: dict[str, object]) -> Column:

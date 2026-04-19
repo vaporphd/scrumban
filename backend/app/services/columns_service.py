@@ -30,19 +30,27 @@ class ColumnError(Exception):
     """Domain-level column failure. Routers map to HTTP 404/409.
 
     Sibling of `BoardError` for column-scoped failures: the column
-    itself doesn't exist (404) or — when issue #79 lands — it has tasks
-    blocking deletion (409). Kept distinct from `BoardError` so the
-    exception type encodes which resource is missing; "column not found
-    on a board that does exist" deserves a different exception than
-    "board not found / archived" (which is a `BoardError` because the
-    parent is what's gone). Routers map both to 404 today, but the
-    branching surface will widen with #79.
+    itself doesn't exist (404) or — for `column_has_tasks` (#79) — it
+    holds tasks that block deletion (409). Kept distinct from
+    `BoardError` so the exception type encodes which resource is
+    missing; "column not found on a board that does exist" deserves a
+    different exception than "board not found / archived" (which is a
+    `BoardError` because the parent is what's gone).
+
+    `task_count` is set only for the `column_has_tasks` code (the 409
+    DELETE branch) so the router can echo it back in the response body
+    per the issue spec — `{"detail": "column_has_tasks", "task_count":
+    N}`. Stored as an instance attribute (rather than a constructor
+    arg) so the existing `ColumnError(code, message)` call sites stay
+    untouched; the DELETE service path attaches it explicitly before
+    raising.
     """
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.task_count: int | None = None
 
 
 async def create_column(
@@ -168,3 +176,72 @@ async def update_column(
         await session.refresh(column, ["updated_at"])
     await session.commit()
     return column
+
+
+async def delete_column(
+    session: AsyncSession,
+    *,
+    actor: User,
+    column_id: int,
+) -> None:
+    """Delete column `column_id`, refusing if it still holds tasks.
+
+    Per issue #79: 204 on empty column; 409 on a column that still
+    contains one or more tasks (the count is echoed back via
+    `ColumnError.task_count` so the router can build the
+    `{"detail": "column_has_tasks", "task_count": N}` body the issue
+    requires); 404 on unknown column id and on columns whose parent
+    board is archived (same read-only-and-obscure model as
+    `update_column` — probers can't tell archived-but-exists from
+    never-existed).
+
+    Why guard against task-cascade rather than rely on the model:
+    `Column.tasks` declares `cascade="all, delete-orphan"` and the
+    `tasks.column_id` FK is `ON DELETE CASCADE`, so a naive delete
+    would silently take every task on the column with it. The 409
+    contract exists precisely to surface that as a deliberate user
+    decision (the UI then offers to move the tasks first) rather than
+    a footgun.
+
+    Raises:
+        ColumnError("column_not_found"): unknown column id (404).
+        BoardError("board_not_found"): column's parent board is missing
+            or archived (404, same obscurity contract as
+            `update_column`).
+        ColumnError("column_has_tasks"): column still holds N > 0
+            tasks; `err.task_count == N` is set for the router (409).
+
+    RBAC is Phase 7 — for now any authenticated user can delete any
+    column, matching the rest of the Phase 2 endpoints. The `actor`
+    parameter is kept in the signature so the future RBAC filter can
+    land without a router change.
+
+    TODO(ws): publish `column.deleted` on the `board:{id}` Redis
+    channel once the realtime layer lands (Phase 3, issues 123-134).
+    Same deferred-publish stance as `create_column` / `update_column`
+    — see those docstrings.
+    """
+    _ = actor  # RBAC lands in Phase 7; keep the parameter for forward-compat.
+    column = await column_repo.get_by_id(session, column_id)
+    if column is None:
+        raise ColumnError("column_not_found", f"Column {column_id} not found.")
+
+    board = await board_repo.get_by_id(session, column.board_id)
+    if board is None or board.archived_at is not None:
+        # Archived parent board → column is read-only. Surface as
+        # "board not found" so probers can't tell archived-but-exists
+        # from never-existed (same 404-not-403 model as
+        # `update_column`).
+        raise BoardError("board_not_found", f"Board {column.board_id} not found.")
+
+    task_count = await column_repo.task_count_for_column(session, column_id)
+    if task_count > 0:
+        err = ColumnError(
+            "column_has_tasks",
+            f"Column {column_id} has {task_count} task(s); cannot delete.",
+        )
+        err.task_count = task_count
+        raise err
+
+    await column_repo.delete(session, column)
+    await session.commit()
