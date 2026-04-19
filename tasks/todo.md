@@ -164,7 +164,7 @@ scrumban/
 - [x] Миграция (#36, `73cb93ca2565`)
 - [x] Репо-слой + сервисы (переиспользуемые api+bot) (#36, read-only repo + NotImplementedError service skeletons)
 - [x] REST: `/api/boards` (list/create/get/update/archive) (#69, #70, #71, #72, #73)
-- [ ] REST: `/api/boards/{id}/columns` (CRUD + reorder)
+- [x] REST: `/api/boards/{id}/columns` (CRUD + reorder) (#77, #78, #79, #80)
 - [ ] REST: `/api/boards/{id}/tasks` (list с фильтрами: assignee, label, due, search)
 - [ ] REST: `/api/tasks/{id}` (get/update/delete)
 - [ ] REST: `/api/tasks/{id}/move` (column_id + position) — с транзакционным пересчётом позиций

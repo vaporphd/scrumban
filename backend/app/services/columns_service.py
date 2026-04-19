@@ -245,3 +245,106 @@ async def delete_column(
 
     await column_repo.delete(session, column)
     await session.commit()
+
+
+async def reorder_columns(
+    session: AsyncSession,
+    *,
+    actor: User,
+    board_id: int,
+    ordered_column_ids: list[int],
+) -> list[Column]:
+    """Rewrite all column positions on `board_id` to match `ordered_column_ids`.
+
+    Per issue #80: the request body is the **complete** desired order —
+    every column on the board must appear exactly once. The service
+    refuses partial lists, extras, duplicates, and unknown ids with a
+    single `ColumnError("invalid_reorder")` → 400 (see the validation
+    branch below). Same archived-board → 404 obscurity contract as the
+    other column verbs (`update_column` / `delete_column`).
+
+    Position rewrite strategy: assign `COLUMN_POSITION_STEP * (i + 1)`
+    for each column in the new order — i.e. `1000, 2000, 3000, ...`.
+    Full rewrite rather than ADR-0004's float `(prev + next) / 2`
+    in-place insert because column reorders are rare AND the typical
+    column count is 3-7 (per the board-design conventions in
+    `db/models/column.py`). Cascading integer rewrites stay cheap; the
+    float scheme exists for the *task* hot path where every drag
+    triggers a position update.
+
+    Why collapse partial / extra / duplicate / unknown onto one
+    `invalid_reorder` code rather than four discrete codes: the client
+    UX is the same in every case ("the list you sent doesn't match the
+    board") and the four shapes are easier to validate as one set
+    comparison than as four sequential predicate checks. A duplicate
+    `[A, A, B]` against a board `{A, B, C}` fails the set-equality
+    branch (the set is `{A, B}`, missing C), and the length-vs-
+    set-length check then catches the duplicate flavor explicitly even
+    on boards where the multiset would otherwise match. Either branch
+    raises the same code — the 400 body is the contract, not the
+    failure flavor.
+
+    Transactional: the validation runs *before* any mutation. If
+    validation passes, all position updates flush in one batch and one
+    commit. If anything raises after the first `position` write but
+    before commit (DB error, etc.), the AsyncSession rolls back the
+    transaction on exception — the half-written positions never persist.
+
+    Raises:
+        BoardError("board_not_found"): unknown board id, or board is
+            archived (read-only model — same obscurity contract as
+            `update_column`).
+        ColumnError("invalid_reorder"): `ordered_column_ids` does not
+            match the board's column set exactly (missing ids, extra
+            ids, unknown ids from another board, or duplicates).
+
+    RBAC is Phase 7 — for now any authenticated user can reorder any
+    board's columns, matching the rest of the Phase 2 endpoints. The
+    `actor` parameter is kept in the signature so the future RBAC
+    filter can land without a router change.
+
+    TODO(ws): publish `column.reordered` on the `board:{id}` Redis
+    channel once the realtime layer lands (Phase 3, issues 123-134).
+    Same deferred-publish stance as `create_column` / `update_column`
+    / `delete_column` — see those docstrings.
+    """
+    _ = actor  # RBAC lands in Phase 7; keep the parameter for forward-compat.
+    board = await board_repo.get_by_id(session, board_id)
+    if board is None or board.archived_at is not None:
+        # Same 404 obscurity model as `create_column` — archived parent
+        # boards are read-only and we don't reveal exists-but-archived.
+        raise BoardError("board_not_found", f"Board {board_id} not found.")
+
+    existing = await column_repo.list_for_board(session, board_id)
+    existing_ids = {c.id for c in existing}
+    requested_ids = set(ordered_column_ids)
+
+    # Two-condition check (set equality + length parity) covers all
+    # four invalid shapes. The length check catches duplicates that the
+    # set comparison would otherwise mask on the perfect-multiset case
+    # (a board {A, B} with payload [A, A] has set {A} != {A, B} so the
+    # first branch fires — but the explicit length check makes the
+    # duplicate-rejection guarantee independent of the board's contents
+    # and is cheaper than constructing a Counter).
+    if existing_ids != requested_ids or len(ordered_column_ids) != len(requested_ids):
+        raise ColumnError(
+            "invalid_reorder",
+            f"ordered_column_ids must match board {board_id}'s columns exactly.",
+        )
+
+    by_id = {c.id: c for c in existing}
+    reordered: list[Column] = []
+    for i, cid in enumerate(ordered_column_ids):
+        col = by_id[cid]
+        col.position = COLUMN_POSITION_STEP * (i + 1)
+        reordered.append(col)
+    await session.flush()
+    # `updated_at` has `onupdate=func.now()` (TimestampMixin) — the DB
+    # computes new values on flush and SQLAlchemy expires the attrs.
+    # Without an explicit refresh, the router's `ColumnRead.model_validate`
+    # would lazy-load outside the async context → `MissingGreenlet`.
+    # Same trap `update_column` documents.
+    for col in reordered:
+        await session.refresh(col, ["updated_at"])
+    await session.commit()
+    return reordered

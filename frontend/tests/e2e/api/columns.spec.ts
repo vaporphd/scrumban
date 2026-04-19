@@ -1,5 +1,5 @@
 // Spec #api-4: /api/boards/{id}/columns + /api/columns/{id} (issues
-// #77, #78, #79) — backend smoke per ADR-0008.
+// #77, #78, #79, #80) — backend smoke per ADR-0008.
 //
 // Pure HTTP, no browser. Scenarios:
 //   1. POST /api/boards/{id}/columns with auth on a fresh board → 201 +
@@ -12,6 +12,14 @@
 //   5. DELETE /api/columns/{id} on an empty column → 204; the parent
 //      board's GET no longer lists it (cross-endpoint contract).
 //   6. DELETE /api/columns/{id} on unknown column → 404.
+//   7. POST /api/boards/{id}/columns/reorder with reversed ids → 200;
+//      response is in the new order with positions 1000/2000/3000;
+//      subsequent GET /api/boards/{id} embeds the columns in the new
+//      order (cross-endpoint contract — `BoardDetailRead.columns`
+//      eager-loads with `order_by=Column.position` so this is what
+//      catches a position-rewrite that didn't commit).
+//   8. POST /api/boards/{id}/columns/reorder with a partial list → 400
+//      `invalid_reorder`; GET board confirms positions unchanged.
 //
 // TODO(#90): extend with "POST a task into a column, then DELETE the
 // column → 409 with body {detail: 'column_has_tasks', task_count: N}".
@@ -21,10 +29,6 @@
 // `backend/tests/test_columns_delete.py`); the smoke gap is the
 // HTTP-level cross-endpoint check, which this TODO claims back once
 // #90 ships.
-//
-// The next column-shaped issue (#80, reorder) extends this file
-// rather than fanning out into a per-verb spec — keeps the columns
-// smoke story in one place.
 //
 // The spec mints its own user (register + login) inline. Idempotent
 // across re-runs because the username is suffixed with crypto.randomUUID
@@ -304,4 +308,148 @@ test('DELETE /api/columns/{id} on an unknown column id returns 404', async ({ re
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   expect(response.status()).toBe(404)
+})
+
+test('POST /api/boards/{id}/columns/reorder reverses the order and the board GET reflects it', async ({
+  request,
+}) => {
+  // The cross-endpoint contract issue #80 locks: a reorder via the
+  // sub-resource verb must rewrite positions transactionally AND a
+  // subsequent GET /api/boards/{id} must surface the new order via
+  // its embedded `columns[]`. `BoardDetailRead.columns` eager-loads
+  // with `order_by=Column.position`, so a position-rewrite that
+  // didn't commit (or that the GET path missed) would surface here.
+  const username = uniq('columns_reorder_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Columns Reorder E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  // Fresh board with three columns A/B/C.
+  const boardName = uniq('columns-reorder-board')
+  const createdBoard = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: boardName, description: 'host board for reorder smoke' },
+  })
+  expect(createdBoard.status()).toBe(201)
+  const { id: boardId } = await createdBoard.json()
+
+  const colA = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: uniq('A') },
+  })
+  expect(colA.status()).toBe(201)
+  const { id: aId } = await colA.json()
+
+  const colB = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: uniq('B') },
+  })
+  expect(colB.status()).toBe(201)
+  const { id: bId } = await colB.json()
+
+  const colC = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: uniq('C') },
+  })
+  expect(colC.status()).toBe(201)
+  const { id: cId } = await colC.json()
+
+  // POST reorder with reversed ids → C/B/A.
+  const reorder = await request.post(`${API}/boards/${boardId}/columns/reorder`, {
+    headers: auth,
+    data: { ordered_column_ids: [cId, bId, aId] },
+  })
+  expect(reorder.status()).toBe(200)
+  const reorderBody = await reorder.json()
+  expect(Array.isArray(reorderBody)).toBe(true)
+  expect(reorderBody.map((c: { id: number }) => c.id)).toEqual([cId, bId, aId])
+  // Positions canonicalized to 1000/2000/3000.
+  expect(reorderBody.map((c: { position: number }) => c.position)).toEqual([1000, 2000, 3000])
+
+  // GET the parent board — embedded columns reflect the new order
+  // (BoardDetailRead.columns eager-loads with order_by=Column.position
+  // so the array order IS the display order).
+  const boardAfter = await request.get(`${API}/boards/${boardId}`, {
+    headers: auth,
+  })
+  expect(boardAfter.status()).toBe(200)
+  const boardBody = await boardAfter.json()
+  expect(boardBody.columns.map((c: { id: number }) => c.id)).toEqual([cId, bId, aId])
+})
+
+test('POST /api/boards/{id}/columns/reorder with a partial list returns 400 invalid_reorder', async ({
+  request,
+}) => {
+  // Defensive: a partial list (subset of board's columns) must fail
+  // with `invalid_reorder` AND leave the board untouched. The pytest
+  // suite covers no-mutation via direct DB inspection; the smoke
+  // gap is the HTTP-level cross-endpoint check that GET /api/boards
+  // still shows the original positions.
+  const username = uniq('columns_reorder_400_e2e')
+  const password = 'correct-horse-battery'
+
+  const register = await request.post(`${API}/auth/register`, {
+    data: { username, password, display_name: 'Columns Reorder 400 E2E' },
+  })
+  expect(register.status()).toBe(201)
+
+  const login = await request.post(`${API}/auth/login`, {
+    data: { username, password },
+  })
+  expect(login.status()).toBe(200)
+  const { access_token: accessToken } = await login.json()
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  const boardName = uniq('columns-reorder-400-board')
+  const createdBoard = await request.post(`${API}/boards`, {
+    headers: auth,
+    data: { name: boardName, description: 'host board for reorder 400 smoke' },
+  })
+  expect(createdBoard.status()).toBe(201)
+  const { id: boardId } = await createdBoard.json()
+
+  const colA = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: uniq('A') },
+  })
+  const { id: aId } = await colA.json()
+  const colB = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: uniq('B') },
+  })
+  const { id: bId } = await colB.json()
+  const colC = await request.post(`${API}/boards/${boardId}/columns`, {
+    headers: auth,
+    data: { name: uniq('C') },
+  })
+  const { id: cId } = await colC.json()
+
+  // Partial list — missing C.
+  const reorder = await request.post(`${API}/boards/${boardId}/columns/reorder`, {
+    headers: auth,
+    data: { ordered_column_ids: [aId, bId] },
+  })
+  expect(reorder.status()).toBe(400)
+  expect((await reorder.json()).detail).toBe('invalid_reorder')
+
+  // GET the board — order and ids unchanged.
+  const boardAfter = await request.get(`${API}/boards/${boardId}`, {
+    headers: auth,
+  })
+  expect(boardAfter.status()).toBe(200)
+  const boardBody = await boardAfter.json()
+  expect(boardBody.columns.map((c: { id: number }) => c.id)).toEqual([aId, bId, cId])
+  expect(boardBody.columns.map((c: { position: number }) => c.position)).toEqual([
+    1000, 2000, 3000,
+  ])
 })
