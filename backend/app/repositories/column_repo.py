@@ -56,3 +56,26 @@ async def create(
     session.add(column)
     await session.flush()
     return column
+
+
+async def apply_updates(session: AsyncSession, column: Column, fields: dict[str, object]) -> Column:
+    """Apply a partial update to an already-loaded `column` row.
+
+    `fields` is the caller's pre-filtered dict of attributes to write
+    (typically `ColumnUpdate.model_dump(exclude_unset=True)` — i.e. only
+    fields the client explicitly sent). Empty `fields` is a valid no-op
+    and just returns the same row unchanged.
+
+    Mirrors `board_repo.apply_updates` — done in-Python (mutate attrs +
+    flush) rather than as a single `update().where(...).values(...)`
+    because the service has already loaded the row to enforce 404 +
+    archive policy, so the row is in the identity map either way.
+    `TimestampMixin.updated_at` (`onupdate=func.now()`) fires on flush
+    of dirty attributes regardless of path.
+
+    Caller (the service) owns the surrounding transaction.
+    """
+    for key, value in fields.items():
+        setattr(column, key, value)
+    await session.flush()
+    return column

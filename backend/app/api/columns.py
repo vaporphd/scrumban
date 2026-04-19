@@ -1,12 +1,17 @@
 """Columns REST router.
 
-Mounted at `/api` from `app.main_api`. Routes nest under `/boards/{board_id}/columns`
-because column creation is a sub-resource of a board (you can only add
-a column *to* a board). Future per-column verbs (PATCH / DELETE /
-reorder — issues #78, #79, #80) will use a flat `/columns/{column_id}`
-shape because once a column exists its identity is global; the parent
-board is reachable via the row's `board_id`. Keeping both shapes in this
-file means the columns surface stays in one place.
+Mounted at `/api` from `app.main_api`. Routes split into two shapes:
+
+  * Sub-resource shape `/boards/{board_id}/columns` — used for column
+    *creation*, because you can only add a column *to* a board (the
+    parent must exist; new column has no id yet).
+  * Flat shape `/columns/{column_id}` — used for per-column verbs
+    (PATCH here, DELETE / reorder coming with issues #79, #80) because
+    once a column exists its identity is global; the parent board is
+    reachable via the row's `board_id`.
+
+Keeping both shapes in this file means the columns surface stays in
+one place.
 
 Per ADR-0001 the router stays thin: parse request, delegate to
 `columns_service`, serialize response. All business logic + transaction
@@ -18,9 +23,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser, SessionDep
-from app.domain.columns import ColumnCreate, ColumnRead
+from app.domain.columns import ColumnCreate, ColumnRead, ColumnUpdate
 from app.services import columns_service
 from app.services.boards_service import BoardError
+from app.services.columns_service import ColumnError
 
 router = APIRouter(tags=["columns"])
 
@@ -51,6 +57,45 @@ async def create_column(
         )
     except BoardError as exc:
         if exc.code == "board_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+        raise
+    return ColumnRead.model_validate(column)
+
+
+@router.patch(
+    "/columns/{column_id}",
+    response_model=ColumnRead,
+)
+async def update_column(
+    column_id: int,
+    payload: ColumnUpdate,
+    user: CurrentUser,
+    session: SessionDep,
+) -> ColumnRead:
+    """Partially update `name` and/or `wip_limit` on column `column_id`.
+
+    Column id is at the root (`/columns/{column_id}`) — not nested under
+    its board — because once a column exists its identity is global; the
+    parent board is reachable via the row's `board_id`. This is the
+    flat-shape branch the module-level docstring describes.
+
+    Returns the updated `ColumnRead`. 404 on unknown column id and on
+    columns whose parent board is archived (archived = read-only — see
+    `columns_service.update_column`). 422 on invalid `name` (empty /
+    >64) or `wip_limit` (<1 / >1000) is handled by FastAPI from the
+    pydantic schema. 401 (no token / bad token) is handled by the
+    `CurrentUser` dependency. Empty `{}` body is a valid no-op and
+    returns the current row unchanged — see the service docstring.
+    """
+    try:
+        column = await columns_service.update_column(
+            session, actor=user, column_id=column_id, payload=payload
+        )
+    except (ColumnError, BoardError) as exc:
+        # Both surface as 404 to keep the obscurity contract (see
+        # service docstring). When #79 lands, ColumnError will also
+        # carry "column_has_tasks" → 409; that branches off here.
+        if exc.code in {"column_not_found", "board_not_found"}:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
         raise
     return ColumnRead.model_validate(column)
