@@ -16,9 +16,17 @@
 //
 // Subsequent issues (#76 detail view) will extend this spec with list /
 // navigate scenarios.
-
+//
+// Route glob: we match `/api/boards` and `/api/boards?…anything`. A bare
+// `**/api/boards` glob would silently miss future querystring requests
+// (e.g. `?include_archived=true` in #80), so we use a regex that anchors on
+// the path and accepts an optional query string. This keeps the intercept
+// "everything that hits the boards list endpoint" rather than "the exact URL
+// the current PR happens to use."
 import { expect, test, type Route } from '@playwright/test'
 import { randomUsername, registerViaUi } from './helpers'
+
+const BOARDS_ROUTE = /\/api\/boards(\?|$)/
 
 test('register → /boards → empty-state CTA visible', async ({ page }) => {
   const username = randomUsername('boards_list')
@@ -29,7 +37,7 @@ test('register → /boards → empty-state CTA visible', async ({ page }) => {
 
   // Force the boards-list response to empty so we always land on the
   // empty-state CTA branch (see file-level docstring).
-  await page.route('**/api/boards', async (route, request) => {
+  await page.route(BOARDS_ROUTE, async (route, request) => {
     if (request.method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -67,7 +75,7 @@ test('create-board modal: empty-state CTA → fill form → submit → board app
   // (refresh after success) returns [createdBoard], which the view should
   // render as a single list item.
   let listResponse: unknown[] = []
-  await page.route('**/api/boards', async (route: Route) => {
+  await page.route(BOARDS_ROUTE, async (route: Route) => {
     const req = route.request()
     if (req.method() === 'POST') {
       const body = JSON.parse(req.postData() ?? '{}') as {
@@ -139,7 +147,7 @@ test('create-board modal: header button is also an entry point + ESC cancels', a
   // Empty list — we want the header button to be reachable from the
   // empty-state branch too (the issue spec says the header button is
   // visible always, not only when boards.length > 0).
-  await page.route('**/api/boards', async (route, request) => {
+  await page.route(BOARDS_ROUTE, async (route, request) => {
     if (request.method() === 'GET') {
       await route.fulfill({
         status: 200,

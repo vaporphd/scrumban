@@ -119,6 +119,44 @@ describe('useBoardsStore.create', () => {
     )
   })
 
+  it('sets creating=true while the request is in flight', async () => {
+    // Mirrors the list-mid-flight pattern above (deferred-promise from PR #144
+    // fix-up). Defer only the POST — we never reach the GET refresh because we
+    // resolve the POST after asserting `creating===true` and then await the
+    // outer promise to completion (which, via store.create → store.list, fires
+    // the GET; we resolve that with a trivial empty list).
+    let resolvePost!: (response: Response) => void
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolvePost = resolve
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    const pending = store.create({ name: 'X' })
+
+    expect(store.creating).toBe(true)
+
+    resolvePost(
+      jsonResponse(201, {
+        id: 1,
+        name: 'X',
+        description: null,
+        created_by: 7,
+        created_at: '2026-04-19T10:00:00Z',
+        updated_at: '2026-04-19T10:00:00Z',
+        archived_at: null,
+      }),
+    )
+    await pending
+
+    expect(store.creating).toBe(false)
+  })
+
   it('rethrows on failure, clears creating, and leaves boards untouched', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

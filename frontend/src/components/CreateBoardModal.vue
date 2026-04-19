@@ -21,7 +21,7 @@
 // breaking this contract — we'd just additionally call `toast.error(detail)`
 // from the catch block here.
 
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useBoardsStore } from '@/stores/boards'
 import { ApiError } from '@/types/auth'
 
@@ -39,15 +39,67 @@ const description = ref('')
 const validationError = ref<string | null>(null)
 const submitError = ref<string | null>(null)
 const nameInput = ref<HTMLInputElement | null>(null)
+// Root element of the modal — used by the focus trap to enumerate focusable
+// descendants. Bound via the template ref below.
+const modalRoot = ref<HTMLElement | null>(null)
+// Element that had focus before the modal mounted, so we can restore it on
+// unmount. Without this, focus returns to <body> after a modal close, which
+// is a measurable a11y regression for keyboard users.
+let previouslyFocused: HTMLElement | null = null
+
+// Selectors for "things a Tab keypress can land on inside the modal." Kept
+// narrow on purpose — anchors / form fields / buttons / explicit tabindex
+// cover everything we render today and almost every modal we'll add. If a
+// future modal embeds an iframe or contenteditable region, extend this list.
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'textarea:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function focusableElements(): HTMLElement[] {
+  if (!modalRoot.value) return []
+  return Array.from(modalRoot.value.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+}
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault()
     emit('cancel')
+    return
+  }
+  if (event.key === 'Tab') {
+    // Focus trap: keep keyboard focus inside the modal. First reusable modal
+    // in the codebase, so the pattern propagates to #76+ — keep it minimal
+    // (no 3rd-party dep) but correct (handles shift+tab and the empty-list
+    // edge case).
+    const focusables = focusableElements()
+    if (focusables.length === 0) {
+      event.preventDefault()
+      return
+    }
+    const first = focusables[0]!
+    const last = focusables[focusables.length - 1]!
+    const active = document.activeElement as HTMLElement | null
+    if (event.shiftKey) {
+      if (active === first || !modalRoot.value?.contains(active)) {
+        event.preventDefault()
+        last.focus()
+      }
+    } else {
+      if (active === last || !modalRoot.value?.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
   }
 }
 
 onMounted(() => {
+  previouslyFocused = (document.activeElement as HTMLElement | null) ?? null
   window.addEventListener('keydown', onKeydown)
   // Focus the name field so the user can type immediately. queueMicrotask
   // is enough — the ref is bound by the time setup's onMounted fires.
@@ -56,6 +108,19 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  // Restore focus to whatever had it before we opened. Guard against the
+  // element having been removed from the DOM in the interim.
+  if (previouslyFocused && document.contains(previouslyFocused)) {
+    previouslyFocused.focus()
+  }
+})
+
+// Clear a stale submit error as soon as the user starts editing the name —
+// otherwise a "name too long" message persists after they shorten the input,
+// which is confusing. Description is a free-form field with no server-side
+// uniqueness rules so we don't bother mirroring the watcher there.
+watch(name, () => {
+  if (submitError.value !== null) submitError.value = null
 })
 
 async function onSubmit(): Promise<void> {
@@ -97,6 +162,7 @@ function onCancel(): void {
 
 <template>
   <div
+    ref="modalRoot"
     class="modal-backdrop"
     data-testid="create-board-modal"
     role="dialog"
