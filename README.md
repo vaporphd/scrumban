@@ -71,10 +71,14 @@ npm run dev
 One-time setup after cloning:
 
 ```sh
+cp backend/.env.example backend/.env
+cp backend/.env.local.example backend/.env.local    # host-shell override (pre-push pytest, local uvicorn)
 cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e . && pip install ruff mypy pytest pytest-asyncio httpx pre-commit && cd ..
 cd frontend && npm install && cd ..
 pre-commit install                        # wires git hooks: pre-commit AND pre-push
 ```
+
+`backend/.env` is the compose-shaped config (`DATABASE__URL=...@postgres:5432/...`) — the api and bot containers resolve `postgres` via Docker's bridge network. `backend/.env.local` overrides that to `@localhost:5432` so host-shell tools — the pre-push pytest hook, a local `uvicorn`, ad-hoc `pytest` — reach the compose-published port without needing `DATABASE__URL=...` prefixed on every command. Pydantic-settings loads `.env.local` after `.env`, so the override wins. `docker-compose.yml` only consumes `backend/.env`, so containers are unaffected by `.env.local`. Both files are gitignored; their `.example` templates are tracked.
 
 ## Quality gate
 
