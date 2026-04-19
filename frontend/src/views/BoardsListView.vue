@@ -1,20 +1,27 @@
 <script setup lang="ts">
-// Boards list view (issue #74). First frontend Phase 2 view.
+// Boards list view (issue #74).
 //
 // Four UI states driven by useBoardsStore:
 //  1. loading  → spinner
 //  2. error    → message + retry button
-//  3. empty    → CTA "Create your first board" (button is a stub for now;
-//                issue #75 wires it to a modal)
+//  3. empty    → CTA "Create your first board" (opens create-board modal)
 //  4. list     → render boards as router-links to /boards/{id}
 //                (detail route ships in a later issue; the link will resolve
 //                once /boards/:id is added — until then it 404s on click.
 //                We render the link anyway so the wiring is in place.)
+//
+// Issue #75 added the create-board modal and wired it from two entry points:
+//  - Header "New board" button (always visible while on /boards).
+//  - Empty-state CTA "Create your first board" (only when boards.length === 0).
+// Both flip the same `isModalOpen` ref so there's a single owner of the modal
+// lifecycle. On `created` we close + the store has already refreshed the list.
 
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
+import CreateBoardModal from '@/components/CreateBoardModal.vue'
 import { useBoardsStore } from '@/stores/boards'
 
 const boards = useBoardsStore()
+const isModalOpen = ref(false)
 
 onMounted(() => {
   void boards.list()
@@ -23,11 +30,28 @@ onMounted(() => {
 function retry(): void {
   void boards.list()
 }
+
+function openModal(): void {
+  isModalOpen.value = true
+}
+
+function closeModal(): void {
+  isModalOpen.value = false
+}
 </script>
 
 <template>
   <section class="boards">
-    <h2>Boards</h2>
+    <header class="boards-header">
+      <h2>Boards</h2>
+      <button
+        type="button"
+        data-testid="open-create-board-modal"
+        @click="openModal"
+      >
+        New board
+      </button>
+    </header>
 
     <div v-if="boards.loading" class="state-loading" role="status" aria-live="polite">
       <span class="spinner" aria-hidden="true"></span>
@@ -41,15 +65,10 @@ function retry(): void {
 
     <div v-else-if="boards.boards.length === 0" class="state-empty">
       <p>You don't have any boards yet.</p>
-      <!-- Disabled until issue #75 wires the create-board modal. The button is
-           rendered (with its data-testid) so the smoke spec's empty-state
-           assertion stays meaningful, but it's a no-op with a tooltip hint
-           rather than a silent live button. -->
       <button
         type="button"
         data-testid="create-first-board-cta"
-        disabled
-        title="Coming soon"
+        @click="openModal"
       >
         Create your first board
       </button>
@@ -63,6 +82,12 @@ function retry(): void {
         </RouterLink>
       </li>
     </ul>
+
+    <CreateBoardModal
+      v-if="isModalOpen"
+      @cancel="closeModal"
+      @created="closeModal"
+    />
   </section>
 </template>
 
@@ -71,8 +96,14 @@ function retry(): void {
   max-width: 40rem;
   margin: 2rem auto;
 }
-h2 {
-  margin: 0 0 1rem;
+.boards-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.boards-header h2 {
+  margin: 0;
 }
 .state-loading,
 .state-error,
