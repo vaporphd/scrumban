@@ -75,3 +75,103 @@ describe('useBoardsStore.list', () => {
     expect(store.loading).toBe(false)
   })
 })
+
+describe('useBoardsStore.create', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs the payload, refreshes the list, and returns the created board', async () => {
+    const created = {
+      id: 42,
+      name: 'My first board',
+      description: 'sandbox',
+      created_by: 7,
+      created_at: '2026-04-19T10:00:00Z',
+      updated_at: '2026-04-19T10:00:00Z',
+      archived_at: null,
+    }
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      // POST /api/boards
+      .mockResolvedValueOnce(jsonResponse(201, created))
+      // GET /api/boards (refresh after success)
+      .mockResolvedValueOnce(jsonResponse(200, [created]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    const result = await store.create({ name: 'My first board', description: 'sandbox' })
+
+    expect(result).toEqual(created)
+    expect(store.boards).toHaveLength(1)
+    expect(store.boards[0]?.id).toBe(42)
+    expect(store.creating).toBe(false)
+
+    // Sanity-check the POST shape (URL + method + body) so a regression in the
+    // api wrapper would surface here without needing a separate api spec.
+    const [postUrl, postInit] = fetchMock.mock.calls[0] ?? []
+    expect(postUrl).toBe('/api/boards')
+    expect((postInit as RequestInit | undefined)?.method).toBe('POST')
+    expect((postInit as RequestInit | undefined)?.body).toBe(
+      JSON.stringify({ name: 'My first board', description: 'sandbox' }),
+    )
+  })
+
+  it('sets creating=true while the request is in flight', async () => {
+    // Mirrors the list-mid-flight pattern above (deferred-promise from PR #144
+    // fix-up). Defer only the POST — we never reach the GET refresh because we
+    // resolve the POST after asserting `creating===true` and then await the
+    // outer promise to completion (which, via store.create → store.list, fires
+    // the GET; we resolve that with a trivial empty list).
+    let resolvePost!: (response: Response) => void
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolvePost = resolve
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+    const pending = store.create({ name: 'X' })
+
+    expect(store.creating).toBe(true)
+
+    resolvePost(
+      jsonResponse(201, {
+        id: 1,
+        name: 'X',
+        description: null,
+        created_by: 7,
+        created_at: '2026-04-19T10:00:00Z',
+        updated_at: '2026-04-19T10:00:00Z',
+        archived_at: null,
+      }),
+    )
+    await pending
+
+    expect(store.creating).toBe(false)
+  })
+
+  it('rethrows on failure, clears creating, and leaves boards untouched', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(422, { detail: 'name already exists' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useBoardsStore()
+
+    await expect(store.create({ name: 'dup' })).rejects.toMatchObject({
+      status: 422,
+      detail: 'name already exists',
+    })
+    expect(store.boards).toEqual([])
+    expect(store.creating).toBe(false)
+    // No refresh should have fired on the failure path.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
